@@ -48,4 +48,6 @@ pub enum MandateError {
     LaunchMismatch,
     #[msg("Insufficient vault balance")]
     InsufficientVault,
+    #[msg("Liquidity was added too recently to be removed")]
+    LiquidityCooldown,
 }

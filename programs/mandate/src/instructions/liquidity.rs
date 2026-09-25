@@ -257,8 +257,10 @@ pub fn add_liquidity<'info>(ctx: Context<'_, '_, 'info, 'info, ManageLiquidity<'
         &[seeds],
     )?;
 
+    let mandate_key = m.key();
+    ctx.accounts.mandate.last_liquidity_add_ts = Clock::get()?.unix_timestamp;
     emit!(LiquidityDeployed {
-        mandate: m.key(),
+        mandate: mandate_key,
         amount_base: args.amount_base,
         amount_quote: args.amount_quote,
         min_bin_id: args.min_bin_id,
@@ -278,6 +280,13 @@ pub fn remove_liquidity<'info>(
     let m = &a.mandate;
     authorize_unwind(m, &a.authority.key())?;
     check_pair_accounts(a)?;
+    if m.status == MandateStatus::Active {
+        let now = Clock::get()?.unix_timestamp;
+        require!(
+            now - m.last_liquidity_add_ts >= m.terms.min_snapshot_interval_secs as i64,
+            MandateError::LiquidityCooldown
+        );
+    }
     require!(bps > 0 && bps <= MAX_BPS && from_bin_id <= to_bin_id, MandateError::InvalidParams);
 
     let owned = DlmmLiquidityAccountsOwned::from_ctx(a);

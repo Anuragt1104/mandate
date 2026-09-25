@@ -85,6 +85,10 @@ pub struct Mandate {
     pub position_width: i32,
     /// Who paid rent for the position (refunded on close).
     pub position_rent_payer: Pubkey,
+    /// Last time the maker added liquidity; removals are blocked for
+    /// `min_snapshot_interval_secs` afterwards so liquidity cannot be added just for a
+    /// snapshot and pulled right after (snapshot sandwiching).
+    pub last_liquidity_add_ts: i64,
 
     pub created_at: i64,
     pub start_ts: i64,

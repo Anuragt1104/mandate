@@ -18,7 +18,9 @@ pub fn finalize_through(m: &mut Mandate, mandate_key: Pubkey, log: &mut ScoreLog
         return Ok(());
     }
     let target = m.period_at(now).min(m.terms.duration_periods);
-    while m.status == MandateStatus::Active && m.current_period < target {
+    let mut processed = 0u32;
+    while m.status == MandateStatus::Active && m.current_period < target && processed < MAX_FINALIZE_PER_CALL {
+        processed += 1;
         let status = if m.cur_snapshots == 0 {
             PERIOD_UNOBSERVED
         } else if m.cur_failed_snapshots > 0 {
@@ -76,7 +78,7 @@ pub fn finalize_through(m: &mut Mandate, mandate_key: Pubkey, log: &mut ScoreLog
         m.current_period += 1;
         m.reset_period_accumulators();
     }
-    if m.status == MandateStatus::Active && now >= m.end_ts {
+    if m.status == MandateStatus::Active && now >= m.end_ts && m.current_period >= m.terms.duration_periods {
         m.status = MandateStatus::Expired;
         profile.mandates_completed += 1;
         emit!(MandateExpired { mandate: mandate_key });
@@ -115,6 +117,11 @@ pub fn snapshot<'info>(ctx: Context<'_, '_, 'info, 'info, Snapshot<'info>>) -> R
     }
     let m = &mut ctx.accounts.mandate;
     if m.status != MandateStatus::Active {
+        return Ok(());
+    }
+    // Still catching up on elapsed periods: measure on a later call so the
+    // snapshot is attributed to the right period.
+    if m.current_period < m.period_at(now).min(m.terms.duration_periods) {
         return Ok(());
     }
     if m.snapshots_total > 0 {

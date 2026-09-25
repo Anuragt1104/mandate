@@ -24,4 +24,6 @@ pub const MAX_POSITION_WIDTH: i32 = 70;
 pub const SCORE_LOG_LEN: usize = 168;
 
 pub const MIN_PERIOD_SECS: u32 = 60;
+/// Max periods finalized per instruction (bounds compute after long unobserved gaps).
+pub const MAX_FINALIZE_PER_CALL: u32 = 32;
 pub const MAX_BPS: u16 = 10_000;
