@@ -98,6 +98,8 @@ pub struct Mandate {
     pub cur_min_bid_depth: u64,
     pub cur_min_ask_depth: u64,
 
+    /// Total snapshots taken over the mandate's life.
+    pub snapshots_total: u32,
     pub periods_ok: u32,
     pub periods_failed: u32,
     pub periods_unobserved: u32,

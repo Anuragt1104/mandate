@@ -117,7 +117,7 @@ pub fn snapshot<'info>(ctx: Context<'_, '_, 'info, 'info, Snapshot<'info>>) -> R
     if m.status != MandateStatus::Active {
         return Ok(());
     }
-    if m.last.ts > 0 {
+    if m.snapshots_total > 0 {
         require!(
             now - m.last.ts >= m.terms.min_snapshot_interval_secs as i64,
             MandateError::SnapshotTooSoon
@@ -162,6 +162,7 @@ pub fn snapshot<'info>(ctx: Context<'_, '_, 'info, 'info, Snapshot<'info>>) -> R
         MeasureError::Math => error!(MandateError::MathOverflow),
     })?;
 
+    m.snapshots_total = m.snapshots_total.saturating_add(1);
     m.cur_snapshots = m.cur_snapshots.saturating_add(1);
     if !measurement.ok {
         m.cur_failed_snapshots = m.cur_failed_snapshots.saturating_add(1);

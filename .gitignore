@@ -9,3 +9,5 @@ test-ledger/
 !.env.example
 .next/
 .DS_Store
+tests/idl/*.json
+!tests/idl/dlmm.json
