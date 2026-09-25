@@ -7,7 +7,8 @@ import type { FeedEvent } from "@/lib/feed";
 import { personaOf, type PersonaBook } from "@/lib/personas";
 import { explorerUrl } from "@/lib/chain";
 import { Skeleton, ago, fmt, shortAddr } from "./ui";
-import { SimMark } from "./sla";
+import { SimMark, judgeName } from "./sla";
+import { DIAGNOSIS_LABELS } from "../../../sdk/src/sentinel";
 
 export interface FeedContext {
   book: PersonaBook;
@@ -67,9 +68,22 @@ function describe(ev: FeedEvent, ctx: FeedContext): Line | null {
           text: <><Who address={d.cranker} ctx={ctx} /> pushed the {market} price {pushed} bin{pushed === 1 ? "" : "s"} and forced a check in the same transaction. <b style={{ color: ok ? "var(--up)" : "var(--down)" }}>{ok ? "The check still passed." : "The check failed."}</b></>,
         };
       }
+      const read = ev.sentinel;
+      const flagged = !!read && read.diagnosis !== "quoting_normally";
       return {
-        icon: <ScanSearch />, tone: ok ? "up" : "down", minor: ok,
-        text: <><Who address={d.cranker} ctx={ctx} /> checked {market}: {ok ? "all obligations met" : <b style={{ color: "var(--down)" }}>obligations missed</b>} <span className="faint">· {detail}</span></>,
+        icon: <ScanSearch />, tone: ok ? (flagged ? "warn" : "up") : "down", minor: ok && !flagged,
+        text: (
+          <>
+            <Who address={d.cranker} ctx={ctx} /> checked {market}: {ok ? "all obligations met" : <b style={{ color: "var(--down)" }}>obligations missed</b>} <span className="faint">· {detail}</span>
+            {read && (
+              <span className="feed-read">
+                Read: <b>{DIAGNOSIS_LABELS[read.diagnosis]}</b>
+                {isFinite(read.breach) && read.source !== "rules" ? <> · breach outlook {Math.round(read.breach * 100)}%</> : null}
+                <span className="faint"> · {judgeName(read.source)}</span>
+              </span>
+            )}
+          </>
+        ),
       };
     }
     case "periodFinalized": {

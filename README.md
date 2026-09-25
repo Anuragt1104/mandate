@@ -209,6 +209,16 @@ npx tsx scripts/simulate.ts scene walkaway 3
 and settlement follow in about four minutes); `sandwich` and `whale` run Mallory's attack and
 a block trade on ORBT immediately.
 
+## The sentinel: System One models in the watchtower
+
+The watchtower pairs rules with Jev, a System One decision model (typed answers with
+calibrated probabilities, no generated text). Rules decide how often each SLA is checked, so
+failing agreements are watched closely on a limited budget. Jev judges the breach outlook, the
+maker's intent and ambiguous situations, and each check publishes that read as a memo the
+status page shows. Enforcement never depends on it. On the same budget, breaches are confirmed
+in about 206 s instead of 275-501 s. [docs/sentinel.md](docs/sentinel.md) has the design, the
+evaluation against rules and the benchmarks.
+
 ## Program
 
 Program ID (localnet and devnet): `3YetFVe4F6MuYaHH7pAmTCZjtMnunQT1ufMdAY8rYFrn`.

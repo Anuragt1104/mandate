@@ -13,6 +13,17 @@ import {
 } from "@solana/web3.js";
 import { MANDATE_PROGRAM_ID, MandateClient, PUBLIC_FALLBACKS, anchorState, decodeDammPool, decodeLbPair, decodeOracleLatest, failoverFetch, projectAnchor } from "../sdk/src";
 
+/** Local secrets (API keys) live in the repo's gitignored .env; real environment variables win. */
+function loadDotEnv() {
+  const p = path.resolve(__dirname, "../.env");
+  if (!fs.existsSync(p)) return;
+  for (const line of fs.readFileSync(p, "utf8").split("\n")) {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
+    if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
+  }
+}
+loadDotEnv();
+
 export const RPC_URL = process.env.RPC_URL ?? "http://127.0.0.1:8899";
 
 /** Extra endpoints of the same cluster to fail over to (comma-separated RPC_FALLBACKS). */

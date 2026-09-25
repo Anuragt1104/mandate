@@ -1,0 +1,395 @@
+{
+  "generatedAt": "2026-09-25T23:11:46.093Z",
+  "perKind": 12,
+  "seed": 7,
+  "model": "jev-1.13.0",
+  "failures": 0,
+  "hybrid": {
+    "gate": 0.75,
+    "routedToModel": 44,
+    "of": 120
+  },
+  "results": [
+    {
+      "name": "rules",
+      "answered": 120,
+      "diagnosisAccuracy": 0.875,
+      "failing": {
+        "brier": 0.07762499999999999,
+        "auc": 0.92,
+        "accuracy": 0.95
+      },
+      "breach": {
+        "brier": 0.0933024999999999,
+        "auc": 0.9322916666666666,
+        "accuracy": 0.925
+      },
+      "exit": {
+        "brier": 0.05848999999999997,
+        "auc": 0.96875,
+        "accuracy": 0.95
+      },
+      "latencyMs": null,
+      "byKind": {
+        "healthy": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.049999999999999996,
+          "breach": 0.019999999999999997,
+          "exit": 0.019999999999999997
+        },
+        "recentre": {
+          "n": 12,
+          "diagnosis": 0.8333333333333334,
+          "failing": 0.19166666666666662,
+          "breach": 0.15000000000000002,
+          "exit": 0.15000000000000002
+        },
+        "exit_after_check": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.9000000000000002,
+          "breach": 0.7999999999999999,
+          "exit": 0.7999999999999999
+        },
+        "exit_failing": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.9000000000000002,
+          "breach": 0.7999999999999999,
+          "exit": 0.7999999999999999
+        },
+        "partial_withdraw": {
+          "n": 12,
+          "diagnosis": 0.6666666666666666,
+          "failing": 0.46666666666666673,
+          "breach": 0.3333333333333333,
+          "exit": 0.3
+        },
+        "thin": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.25,
+          "breach": 0.09999999999999999,
+          "exit": 0.049999999999999996
+        },
+        "depleted_diligent": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.7000000000000001,
+          "breach": 0.35000000000000003,
+          "exit": 0.09999999999999999
+        },
+        "depleted_neglected": {
+          "n": 12,
+          "diagnosis": 0.25,
+          "failing": 0.7000000000000001,
+          "breach": 0.4625000000000001,
+          "exit": 0.24999999999999997
+        },
+        "out_of_range": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.8499999999999998,
+          "breach": 0.7000000000000001,
+          "exit": 0.29999999999999993
+        },
+        "not_started": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.19999999999999998,
+          "breach": 0.09999999999999999,
+          "exit": 0.09999999999999999
+        }
+      }
+    },
+    {
+      "name": "jev-1.13.0",
+      "answered": 120,
+      "diagnosisAccuracy": 0.975,
+      "failing": {
+        "brier": 0.12994083333333334,
+        "auc": 0.9015277777777778,
+        "accuracy": 0.875
+      },
+      "breach": {
+        "brier": 0.10193583333333338,
+        "auc": 0.9924768518518519,
+        "accuracy": 0.8333333333333334
+      },
+      "exit": {
+        "brier": 0.06746666666666669,
+        "auc": 1,
+        "accuracy": 0.9833333333333333
+      },
+      "latencyMs": {
+        "p50": 343,
+        "p95": 423
+      },
+      "byKind": {
+        "healthy": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.10416666666666669,
+          "breach": 0.05416666666666667,
+          "exit": 0.08083333333333334
+        },
+        "recentre": {
+          "n": 12,
+          "diagnosis": 0.75,
+          "failing": 0.31749999999999995,
+          "breach": 0.15000000000000002,
+          "exit": 0.25416666666666665
+        },
+        "exit_after_check": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.8908333333333333,
+          "breach": 0.5383333333333333,
+          "exit": 0.7125
+        },
+        "exit_failing": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.8841666666666668,
+          "breach": 0.6208333333333332,
+          "exit": 0.7116666666666669
+        },
+        "partial_withdraw": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.39166666666666666,
+          "breach": 0.12833333333333333,
+          "exit": 0.21083333333333334
+        },
+        "thin": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.285,
+          "breach": 0.08249999999999999,
+          "exit": 0.14916666666666667
+        },
+        "depleted_diligent": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.6833333333333332,
+          "breach": 0.155,
+          "exit": 0.22000000000000006
+        },
+        "depleted_neglected": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.7575,
+          "breach": 0.5008333333333334,
+          "exit": 0.2816666666666667
+        },
+        "out_of_range": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.8383333333333334,
+          "breach": 0.545,
+          "exit": 0.38916666666666666
+        },
+        "not_started": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.8183333333333335,
+          "breach": 0.2558333333333333,
+          "exit": 0.22166666666666668
+        }
+      }
+    },
+    {
+      "name": "hybrid",
+      "answered": 120,
+      "diagnosisAccuracy": 0.95,
+      "failing": {
+        "brier": 0.08423416666666667,
+        "auc": 0.92,
+        "accuracy": 0.95
+      },
+      "breach": {
+        "brier": 0.08014750000000001,
+        "auc": 0.9375,
+        "accuracy": 0.9
+      },
+      "exit": {
+        "brier": 0.06903083333333332,
+        "auc": 0.96875,
+        "accuracy": 0.95
+      },
+      "latencyMs": {
+        "p50": 0,
+        "p95": 375
+      },
+      "byKind": {
+        "healthy": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.049999999999999996,
+          "breach": 0.019999999999999997,
+          "exit": 0.019999999999999997
+        },
+        "recentre": {
+          "n": 12,
+          "diagnosis": 0.8333333333333334,
+          "failing": 0.19166666666666662,
+          "breach": 0.15000000000000002,
+          "exit": 0.15000000000000002
+        },
+        "exit_after_check": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.9000000000000002,
+          "breach": 0.7999999999999999,
+          "exit": 0.7999999999999999
+        },
+        "exit_failing": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.9000000000000002,
+          "breach": 0.7999999999999999,
+          "exit": 0.7999999999999999
+        },
+        "partial_withdraw": {
+          "n": 12,
+          "diagnosis": 0.6666666666666666,
+          "failing": 0.5616666666666668,
+          "breach": 0.3575,
+          "exit": 0.41333333333333333
+        },
+        "thin": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.285,
+          "breach": 0.08249999999999999,
+          "exit": 0.14916666666666667
+        },
+        "depleted_diligent": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.6833333333333332,
+          "breach": 0.155,
+          "exit": 0.22000000000000006
+        },
+        "depleted_neglected": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.7575,
+          "breach": 0.5008333333333334,
+          "exit": 0.2816666666666667
+        },
+        "out_of_range": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.8499999999999998,
+          "breach": 0.7000000000000001,
+          "exit": 0.29999999999999993
+        },
+        "not_started": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.19999999999999998,
+          "breach": 0.09999999999999999,
+          "exit": 0.09999999999999999
+        }
+      }
+    },
+    {
+      "name": "deployed",
+      "answered": 120,
+      "diagnosisAccuracy": 0.95,
+      "failing": {
+        "brier": 0.07762499999999999,
+        "auc": 0.92,
+        "accuracy": 0.95
+      },
+      "breach": {
+        "brier": 0.10193583333333338,
+        "auc": 0.9924768518518519,
+        "accuracy": 0.8333333333333334
+      },
+      "exit": {
+        "brier": 0.06746666666666669,
+        "auc": 1,
+        "accuracy": 0.9833333333333333
+      },
+      "latencyMs": {
+        "p50": 343,
+        "p95": 423
+      },
+      "byKind": {
+        "healthy": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.049999999999999996,
+          "breach": 0.05416666666666667,
+          "exit": 0.08083333333333334
+        },
+        "recentre": {
+          "n": 12,
+          "diagnosis": 0.8333333333333334,
+          "failing": 0.19166666666666662,
+          "breach": 0.15000000000000002,
+          "exit": 0.25416666666666665
+        },
+        "exit_after_check": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.9000000000000002,
+          "breach": 0.5383333333333333,
+          "exit": 0.7125
+        },
+        "exit_failing": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.9000000000000002,
+          "breach": 0.6208333333333332,
+          "exit": 0.7116666666666669
+        },
+        "partial_withdraw": {
+          "n": 12,
+          "diagnosis": 0.6666666666666666,
+          "failing": 0.46666666666666673,
+          "breach": 0.12833333333333333,
+          "exit": 0.21083333333333334
+        },
+        "thin": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.25,
+          "breach": 0.08249999999999999,
+          "exit": 0.14916666666666667
+        },
+        "depleted_diligent": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.7000000000000001,
+          "breach": 0.155,
+          "exit": 0.22000000000000006
+        },
+        "depleted_neglected": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.7000000000000001,
+          "breach": 0.5008333333333334,
+          "exit": 0.2816666666666667
+        },
+        "out_of_range": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.8499999999999998,
+          "breach": 0.545,
+          "exit": 0.38916666666666666
+        },
+        "not_started": {
+          "n": 12,
+          "diagnosis": 1,
+          "failing": 0.19999999999999998,
+          "breach": 0.2558333333333333,
+          "exit": 0.22166666666666668
+        }
+      }
+    }
+  ]
+}

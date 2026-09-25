@@ -34,7 +34,9 @@ import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.j
 import { createAssociatedTokenAccountIdempotentInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { DynamicBondingCurveClient } from "@meteora-ag/dynamic-bonding-curve-sdk";
 import { MandateClient, MandateTerms, pda, statusName } from "../sdk/src";
-import { CrankState, crankOnce, makerTick, sandwichCheck, tradeOnce, withdrawAll } from "../keeper/agents";
+import { makerTick, sandwichCheck, tradeOnce, withdrawAll } from "../keeper/agents";
+import { Watchtower } from "../keeper/watchtower";
+import { systemOneFromEnv } from "../sdk/src/systemone";
 import { RPC_URL, fetchMandate, loadKeypair, makeClient, makeConnection, sendIxs, sleep } from "../keeper/common";
 import { CLUSTER_NAME, IS_LOCAL, KEY_DIR, ROOT, SUFFIX, createMandatedConfig, ensureAta, fund, helperKey, launchAndGraduate, mintTo, newMint, pairAtGraduatedPrice } from "./lib/launch";
 
@@ -274,40 +276,43 @@ async function run() {
     return out;
   }
 
-  const crankState: CrankState = new Map();
   const lastCheckTs = new Map<string, number>();
   const tasks: Task[] = [];
   const every = (who: Persona, range: [number, number], fn: () => Promise<void>, delay = 0) => tasks.push({ who, every: range, next: now() + delay + rand(0, range[0]), run: fn });
 
-  // Watchtower: random-time checks, finalization, unwind and settlement.
-  every(c.watchtower, [6, 10], async () => {
-    await crankOnce(conn, c.watchtower.key, cl(c.watchtower), crankState, {
-      samplesPerPeriod: 3,
-      onEvent: async (key, what) => {
-        if (!symbolOf[key]) {
-          const m = await fetchMandate(conn, cl(c.watchtower), new PublicKey(key)).catch(() => null);
-          const sym = m && symbolForMint(m.baseMint);
-          if (sym) symbolOf[key] = sym;
-        }
-        if (what.startsWith("checked")) {
-          const m = await fetchMandate(conn, cl(c.watchtower), new PublicKey(key)).catch(() => null);
-          if (!m) return;
-          if (statusName(m.status) === "Breached") {
-            const maker = Object.values(c).find((p) => p.key.publicKey.equals(m.maker));
-            banner(`${label(key)} SLA breached`);
-            return say(c.watchtower, `${colored(203, "BREACH")} ${maker?.name ?? "the maker"} missed ${m.terms.maxConsecutiveFailures} periods in a row: ${(Number(m.bondSlashed) / 1e6).toFixed(0)} USDC of its bond slashed · ${label(key)}`);
-          }
-          const l = m.last;
-          // Checks inside the setup grace (or while catching up on periods) record nothing.
-          if (l.ts.toNumber() === 0 || l.ts.toNumber() === lastCheckTs.get(key)) return say(c.watchtower, dim(`checked ${label(key)} · setup grace, not scored`));
-          lastCheckTs.set(key, l.ts.toNumber());
-          const v = (x: any) => Math.round(Number(x) / 1e6).toLocaleString("en-US");
-          const detail = `spread ${l.spreadBps === 65535 ? "— (a side is empty)" : `${l.spreadBps} bps`} · bids ${v(l.bidDepthQuote)} · asks ${v(l.askDepthQuote)} USDC`;
-          say(c.watchtower, `checked ${label(key)}  ${l.ok ? colored(35, "PASS") : colored(203, "FAIL")}  ${dim(detail)}`);
-        } else say(c.watchtower, `${what} · ${label(key)}`);
-      },
-    });
+  // Watchtower: random-time checks steered by the sentinel, finalization, unwind and settlement.
+  const sentinel = process.env.SENTINEL === "off" ? null : systemOneFromEnv(process.env);
+  const watchtower = new Watchtower(conn, c.watchtower.key, cl(c.watchtower), {
+    samplesPerPeriod: 3,
+    riskWeighted: process.env.RISK_WEIGHTED !== "off",
+    sentinel,
+    budgetPerMinute: process.env.WATCH_BUDGET ? Number(process.env.WATCH_BUDGET) : undefined,
+    symbolOf: (mint) => symbolForMint(mint),
+    onEvent: async (key, what, d) => {
+      if (!symbolOf[key]) {
+        const m = d?.m ?? (await fetchMandate(conn, cl(c.watchtower), new PublicKey(key)).catch(() => null));
+        const sym = m && symbolForMint(m.baseMint);
+        if (sym) symbolOf[key] = sym;
+      }
+      if (what !== "checked" || !d?.m) return say(c.watchtower, `${what} · ${label(key)}`);
+      const m = d.m;
+      if (statusName(m.status) === "Breached") {
+        const maker = Object.values(c).find((p) => p.key.publicKey.equals(m.maker));
+        banner(`${label(key)} SLA breached`);
+        return say(c.watchtower, `${colored(203, "BREACH")} ${maker?.name ?? "the maker"} missed ${m.terms.maxConsecutiveFailures} periods in a row: ${(Number(m.bondSlashed) / 1e6).toFixed(0)} USDC of its bond slashed · ${label(key)}`);
+      }
+      const l = m.last;
+      const a = d.assessment;
+      const outlook = a ? dim(` · sentinel: ${a.diagnosis.replace(/_/g, " ")}, next-check risk ${Math.round(a.risk * 100)}%${isFinite(a.breach) && a.source !== "rules" ? `, breach outlook ${Math.round(a.breach * 100)}%` : ""} (${a.source})`) : "";
+      // Checks inside the setup grace (or while catching up on periods) record nothing.
+      if (l.ts.toNumber() === 0 || l.ts.toNumber() === lastCheckTs.get(key)) return say(c.watchtower, dim(`checked ${label(key)} · setup grace, not scored`) + outlook);
+      lastCheckTs.set(key, l.ts.toNumber());
+      const v = (x: any) => Math.round(Number(x) / 1e6).toLocaleString("en-US");
+      const detail = `spread ${l.spreadBps === 65535 ? "— (a side is empty)" : `${l.spreadBps} bps`} · bids ${v(l.bidDepthQuote)} · asks ${v(l.askDepthQuote)} USDC`;
+      say(c.watchtower, `checked ${label(key)}  ${l.ok ? colored(35, "PASS") : colored(203, "FAIL")}  ${dim(detail)}${outlook}`);
+    },
   });
+  every(c.watchtower, [4, 7], () => watchtower.tick());
 
   // Helios: the diligent maker, on ORBT (and the earlier MAND demo on devnet).
   const heliosMandates = [s.mandates.orbt, s.mandates.mand].filter(Boolean).map((a) => new PublicKey(a));

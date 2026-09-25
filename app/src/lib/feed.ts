@@ -3,6 +3,7 @@
 import { EventParser } from "@coral-xyz/anchor";
 import { PublicKey } from "@solana/web3.js";
 import { MANDATE_PROGRAM_ID } from "../../../sdk/src";
+import { sentinelMemoFromLogs, type SentinelAssessment } from "../../../sdk/src/sentinel";
 import { connection, readClient } from "./chain";
 
 /**
@@ -19,6 +20,8 @@ export interface FeedEvent {
   data: any;
   mandate: string;
   signer: string;
+  /** The watchtower's advisory read, when the check carried a sentinel memo. */
+  sentinel: SentinelAssessment | null;
 }
 
 interface Cache {
@@ -65,10 +68,11 @@ export async function loadFeed(address: PublicKey = MANDATE_PROGRAM_ID, limit = 
       cache.seen.add(s.signature);
       if (!tx?.meta?.logMessages) return;
       const signer = tx.transaction.message.getAccountKeys().get(0)?.toBase58() ?? "";
+      const sentinel = sentinelMemoFromLogs(tx.meta.logMessages);
       let j = 0;
       for (const ev of eventParser().parseLogs(tx.meta.logMessages)) {
         const mandate = ev.data?.mandate?.toBase58?.() ?? "";
-        fresh.push({ key: `${s.signature}:${j++}`, sig: s.signature, slot: s.slot, ts: tx.blockTime ?? s.blockTime ?? 0, name: ev.name, data: ev.data, mandate, signer });
+        fresh.push({ key: `${s.signature}:${j++}`, sig: s.signature, slot: s.slot, ts: tx.blockTime ?? s.blockTime ?? 0, name: ev.name, data: ev.data, mandate, signer, sentinel: ev.name === "snapshotTaken" ? sentinel : null });
       }
     });
     // Newest first; events within one transaction keep their emitted order reversed with it.

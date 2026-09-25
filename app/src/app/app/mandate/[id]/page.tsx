@@ -15,7 +15,8 @@ import { usePersonas, type PersonaBook } from "@/lib/personas";
 import { incidents, obligations, pct, rating, roundTrip, slaStatus, uptime } from "@/lib/sla";
 import { LiquidityChart, LiquidityLegend } from "@/components/charts";
 import { ActivityFeed } from "@/components/feed";
-import { Grade, IncidentList, ObligationRows, Party, SlaBanner, Schedule, StatusChip, TickLegend, nameOf } from "@/components/sla";
+import { Grade, IncidentList, ObligationRows, Party, SentinelCard, SlaBanner, Schedule, StatusChip, TickLegend, judgeName, nameOf } from "@/components/sla";
+import { DIAGNOSIS_LABELS } from "../../../../../../sdk/src/sentinel";
 import { WalletButton } from "@/components/wallet";
 import { Address, InfoTip, Skeleton, StatusIcon, TokenPair, ago, countdown, duration, fmt, fmtFull, fmtPrice, shortAddr } from "@/components/ui";
 import { StrategyType, binArrayIndex, dlmmInitBinArrayIx } from "../../../../../../sdk/src";
@@ -91,6 +92,20 @@ function Detail({ v, now, reload, error }: { v: MandateView; now: number; reload
     mandates: { [key.toBase58()]: { symbol: base, quote, maker: m.maker, issuer: m.issuer, terms: t } },
   }), [book, key, base, quote, m.maker, m.issuer, t]);
   const trip = chart ? roundTrip(chart.bins, chart.pair.activeId, ROUND_TRIP_SIZE) : null;
+  // The watchtower's latest advisory read, and its read during each incident.
+  const latestRead = useMemo(() => events?.find((e) => e.sentinel) ?? null, [events]);
+  const causes = useMemo(() => {
+    const out: Record<number, string> = {};
+    for (const inc of incs) {
+      const ev = events?.find((e) => e.sentinel && e.sentinel.diagnosis !== "quoting_normally" && Number(e.data?.period) >= inc.from && Number(e.data?.period) <= inc.to);
+      if (ev?.sentinel) out[inc.from] = `${DIAGNOSIS_LABELS[ev.sentinel.diagnosis]} (${judgeName(ev.sentinel.source)})`;
+    }
+    return out;
+  }, [incs, events]);
+  const read = latestRead?.sentinel;
+  const banner = read && status === "Active" && read.diagnosis !== "quoting_normally"
+    ? { ...s, detail: `${s.detail} Watchtower read: ${DIAGNOSIS_LABELS[read.diagnosis].toLowerCase()}${isFinite(read.breach) && read.source !== "rules" ? `, breach outlook ${Math.round(read.breach * 100)}%` : ""}.` }
+    : s;
 
   return (
     <>
@@ -112,7 +127,7 @@ function Detail({ v, now, reload, error }: { v: MandateView; now: number; reload
         {error && <span className="xs muted">Showing the last loaded data. {error}</span>}
       </div>
 
-      <SlaBanner s={s} stat={status === "Open" ? { value: `${fmtFull(q(t.feePerPeriod))} ${quote}`, label: `per compliant ${duration(t.periodSecs)}` } : { value: pct(up), label: `uptime · ${entries.filter((e) => e.status !== 3).length} checked periods` }} />
+      <SlaBanner s={banner} stat={status === "Open" ? { value: `${fmtFull(q(t.feePerPeriod))} ${quote}`, label: `per compliant ${duration(t.periodSecs)}` } : { value: pct(up), label: `uptime · ${entries.filter((e) => e.status !== 3).length} checked periods` }} />
 
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-head">
@@ -173,7 +188,7 @@ function Detail({ v, now, reload, error }: { v: MandateView; now: number; reload
               <span className="h3">Incidents</span>
               <span className="xs muted">{incs.length ? `${incs.length} in the last ${entries.length} periods` : `last ${entries.length} periods`}</span>
             </div>
-            <IncidentList items={incs} periodSecs={t.periodSecs} makerName={makerName} slashed={fmt(q(m.bondSlashed))} quote={quote} />
+            <IncidentList items={incs} periodSecs={t.periodSecs} makerName={makerName} slashed={fmt(q(m.bondSlashed))} quote={quote} causes={causes} />
           </div>
 
           <div className="card">
@@ -188,6 +203,7 @@ function Detail({ v, now, reload, error }: { v: MandateView; now: number; reload
         </div>
 
         <div className="stack">
+          {status !== "Open" && <SentinelCard read={read ?? null} at={latestRead?.ts ?? null} now={now} />}
           <LatestCheck v={v} now={now} reload={reload} quote={quote} q={q} />
           <ActionsCard v={v} now={now} reload={reload} periodEnd={periodEnd} book={book} />
           <div className="card">

@@ -2,10 +2,11 @@
 
 import { useRef, useState, type ReactNode } from "react";
 import { PublicKey } from "@solana/web3.js";
-import { CircleCheck, CircleDashed, OctagonX, TriangleAlert, Flag } from "lucide-react";
+import { CircleCheck, CircleDashed, OctagonX, TriangleAlert, Flag, Radar } from "lucide-react";
 import type { Incident, Obligation, Rating, SlaStatus, Tick, Tone } from "@/lib/sla";
+import { DIAGNOSIS_LABELS, type Diagnosis, type SentinelAssessment } from "../../../sdk/src/sentinel";
 import { personaOf, type PersonaBook } from "@/lib/personas";
-import { Address, Tip, duration, fmtFull, shortAddr } from "./ui";
+import { Address, InfoTip, Tip, ago, duration, fmtFull, shortAddr } from "./ui";
 
 // ---------------------------------------------------------------- status
 
@@ -119,7 +120,7 @@ export function ObligationRows({ rows }: { rows: Obligation[] }) {
 
 // ---------------------------------------------------------------- incidents
 
-export function IncidentList({ items, periodSecs, makerName, slashed, quote }: { items: Incident[]; periodSecs: number; makerName: string; slashed: string; quote: string }) {
+export function IncidentList({ items, periodSecs, makerName, slashed, quote, causes = {} }: { items: Incident[]; periodSecs: number; makerName: string; slashed: string; quote: string; causes?: Record<number, string> }) {
   if (!items.length) {
     return (
       <div className="empty-state" style={{ padding: "28px 18px" }}>
@@ -142,6 +143,7 @@ export function IncidentList({ items, periodSecs, makerName, slashed, quote }: {
               Periods {i.from + 1}{i.to !== i.from ? `–${i.to + 1}` : ""} · {duration(i.count * periodSecs)} · {what(i.what) || "an obligation missed"}
               {i.startTs ? ` · from ${new Date(i.startTs * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}
             </p>
+            {causes[i.from] && <p style={{ marginTop: 3 }}>Watchtower read: <b style={{ color: "var(--ink-2)" }}>{causes[i.from]}</b></p>}
           </div>
         </div>
       ))}
@@ -241,4 +243,71 @@ export function Party({ address, book, link = true, fallback }: { address: Publi
 export function nameOf(book: PersonaBook, address: PublicKey | string | null | undefined, fallback = "A wallet") {
   if (!address) return fallback;
   return personaOf(book, address)?.name ?? shortAddr(address);
+}
+
+// ---------------------------------------------------------------- sentinel
+
+export const DIAGNOSIS_TONE: Record<Diagnosis, Tone> = {
+  quoting_normally: "up",
+  thin_but_compliant: "warn",
+  withdrew_liquidity: "down",
+  side_depleted_by_trading: "warn",
+  out_of_range: "down",
+  not_started: "open",
+  unclear: "ended",
+};
+
+/** "jev-1.13.0+rules" → "Jev 1.13 with rules"; "rules" → "Rules only". */
+export function judgeName(source: string) {
+  if (source === "rules") return "Rules only";
+  const m = source.match(/^jev-(\d+\.\d+)/);
+  const model = m ? `Jev ${m[1]}` : source.replace(/\+rules$/, "");
+  return source.endsWith("+rules") ? `${model} with rules` : model;
+}
+
+function Gauge({ label, value, info }: { label: string; value: number; info: string }) {
+  const tone = value >= 0.6 ? "var(--down)" : value >= 0.3 ? "var(--warn)" : "var(--up)";
+  return (
+    <div className="check">
+      <span className="check-name" style={{ fontWeight: 560 }}>{label}<InfoTip>{info}</InfoTip></span>
+      <span className="check-value" style={{ color: tone }}>{isFinite(value) ? `${Math.round(value * 100)}%` : "—"}</span>
+      <span className="meter" aria-hidden="true"><span style={{ width: `${Math.max(2, (isFinite(value) ? value : 0) * 100)}%`, background: tone }} /></span>
+    </div>
+  );
+}
+
+/** The watchtower's latest advisory read of an SLA, from the memo on its check. */
+export function SentinelCard({ read, at, now }: { read: SentinelAssessment | null; at: number | null; now: number }) {
+  return (
+    <div className="card">
+      <div className="card-head">
+        <span className="h3 row" style={{ gap: 8 }}><Radar style={{ width: 16, height: 16, color: "var(--muted)" }} />Watchtower outlook</span>
+        {read && <span className="xs muted">{judgeName(read.source)}{at ? ` · ${ago(Math.max(0, now - at))}` : ""}</span>}
+      </div>
+      <div className="card-body" style={{ display: "grid", gap: 14 }}>
+        {!read ? (
+          <span className="small muted">No watchtower has published a read of this SLA yet. Reads arrive as memos on its checks.</span>
+        ) : (
+          <>
+            <div className="row-between wrap" style={{ gap: 8 }}>
+              <StatusChip tone={DIAGNOSIS_TONE[read.diagnosis]} word={DIAGNOSIS_LABELS[read.diagnosis]} />
+              {isFinite(read.confidence) && <span className="xs muted">confidence {Math.round(read.confidence * 100)}%</span>}
+            </div>
+            <div className="checks">
+              {isFinite(read.breach) && read.source !== "rules" && (
+                <Gauge label="Breach outlook" value={read.breach} info="How likely the maker is to let the agreement breach by missing periods in a row, judged by a System One decision model from the maker's record, recent activity and the checks." />
+              )}
+              {isFinite(read.exit) && read.source !== "rules" && (
+                <Gauge label="Maker leaving on purpose" value={read.exit} info="Whether the maker's recent activity looks like a deliberate exit rather than trading or a price move." />
+              )}
+              <Gauge label="Next check failing" value={read.risk} info="Estimated by the watchtower's rules. It sets how often this SLA is checked: still at random, but more often when failure is likely." />
+            </div>
+          </>
+        )}
+      </div>
+      <div className="card-foot">
+        <span className="xs muted">Advisory. The program pays and slashes from its own measurements; this read only steers where watchtowers look and explains what they see.</span>
+      </div>
+    </div>
+  );
 }
