@@ -639,3 +639,5 @@ export function dlmmSwapIx(p: {
     data,
   });
 }
+
+export * from "./rpc";

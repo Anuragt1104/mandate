@@ -158,7 +158,11 @@ The program is deployed on devnet at `3YetFVe4F6MuYaHH7pAmTCZjtMnunQT1ufMdAY8rYF
 ([explorer](https://explorer.solana.com/address/3YetFVe4F6MuYaHH7pAmTCZjtMnunQT1ufMdAY8rYFrn?cluster=devnet)),
 with its IDL published on-chain. Meteora's DLMM, DAMM v2 and DBC run on devnet at their
 mainnet addresses, but devnet only has DLMM presets for bin step 10, so the devnet demo
-uses one of those. The public devnet RPC rate-limits hard; the scripts back off and retry.
+uses one of those. The public devnet RPC rate-limits hard and sometimes hangs on account
+reads while answering everything else, so the scripts and the app fail over per method to a
+second keyless devnet endpoint (`sdk/src/rpc.ts`). Add your own with `RPC_FALLBACKS` (scripts)
+or `NEXT_PUBLIC_RPC_FALLBACKS` (app), comma-separated; a keyed provider as the primary is
+better still.
 
 ```bash
 CLUSTER=devnet RPC_URL=https://api.devnet.solana.com DLMM_PRESET=4vP4DFDJLRz85NBCfJALYPNdieWwzQSstrUuTms1gekn npx tsx scripts/demo.ts

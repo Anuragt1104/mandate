@@ -17,24 +17,25 @@ import {
   decodePosition,
   pda,
   binArraysCovering,
+  failoverFetch,
+  PUBLIC_FALLBACKS,
 } from "../../../sdk/src";
 
 export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ?? "http://127.0.0.1:8899";
 export const CLUSTER = process.env.NEXT_PUBLIC_CLUSTER ?? "localnet";
+const FALLBACKS = (process.env.NEXT_PUBLIC_RPC_FALLBACKS ?? "").split(",").filter(Boolean);
+
+/**
+ * Every request goes through a per-method failover across endpoints of the cluster: public
+ * devnet can hang on account reads while it still answers everything else.
+ */
+export const rpcFetch = failoverFetch([RPC_URL, ...(FALLBACKS.length ? FALLBACKS : (PUBLIC_FALLBACKS[CLUSTER] ?? []))], { timeoutMs: 6_000, rounds: 2 });
 
 let _conn: Connection | null = null;
 export function connection(): Connection {
   // No automatic retries on 429: usePoll backs off instead, which avoids retry storms
   // against rate-limited public endpoints.
-  // Requests time out after 15 s: public devnet occasionally holds a connection open without
-  // answering, which would otherwise stall polling indefinitely.
-  if (!_conn) {
-    _conn = new Connection(RPC_URL, {
-      commitment: "confirmed",
-      disableRetryOnRateLimit: true,
-      fetch: (input: any, init?: any) => fetch(input, { ...init, signal: AbortSignal.timeout(15_000) }),
-    });
-  }
+  if (!_conn) _conn = new Connection(RPC_URL, { commitment: "confirmed", disableRetryOnRateLimit: true, fetch: rpcFetch as any });
   return _conn;
 }
 

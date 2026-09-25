@@ -6,7 +6,7 @@ import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react
 import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
 import { UnsafeBurnerWalletAdapter } from "@solana/wallet-adapter-unsafe-burner";
 import { CircleAlert, CircleCheck, X } from "lucide-react";
-import { CLUSTER, RPC_URL } from "@/lib/chain";
+import { CLUSTER, RPC_URL, rpcFetch } from "@/lib/chain";
 import "@solana/wallet-adapter-react-ui/styles.css";
 
 if (typeof window !== "undefined") (window as any).Buffer = (window as any).Buffer ?? Buffer;
@@ -25,7 +25,7 @@ export function Providers({ children }: { children: ReactNode }) {
     if (t) setTimeout(() => setToast((cur) => (cur === t ? null : cur)), t.kind === "error" ? 12000 : 9000);
   }, []);
   return (
-    <ConnectionProvider endpoint={RPC_URL} config={{ commitment: "confirmed" }}>
+    <ConnectionProvider endpoint={RPC_URL} config={{ commitment: "confirmed", fetch: rpcFetch as any }}>
       <WalletProvider wallets={wallets} autoConnect>
         <WalletModalProvider>
           <ToastCtx.Provider value={show}>
