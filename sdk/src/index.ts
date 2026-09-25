@@ -2,6 +2,8 @@
  * Mandate TypeScript client: PDA derivation, instruction builders and account decoding.
  * Shared by tests, the keeper/maker bots and the web app.
  */
+// Explicit import: Next.js's built-in Buffer polyfill lacks the BigInt readers used below.
+import { Buffer } from "buffer";
 import { BN, Program } from "@coral-xyz/anchor";
 import { PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY, TransactionInstruction } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";

@@ -18,6 +18,7 @@ export default {
       "@solana/spl-token": mod("@solana/spl-token"),
       "@coral-xyz/anchor": mod("@coral-xyz/anchor"),
       "bn.js": mod("bn.js"),
+      buffer: mod("buffer"),
     };
     config.resolve.fallback = { ...config.resolve.fallback, fs: false, path: false, os: false, crypto: false };
     return config;
