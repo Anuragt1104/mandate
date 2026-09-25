@@ -6,7 +6,7 @@ import { BN } from "@coral-xyz/anchor";
 import { PublicKey } from "@solana/web3.js";
 import { createAssociatedTokenAccountIdempotentInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { useMandateActions } from "@/lib/actions";
-import { mintDecimals } from "@/lib/chain";
+import { CLUSTER, mintDecimals } from "@/lib/chain";
 import { pda } from "../../../../sdk/src";
 
 type Form = Record<string, string>;
@@ -37,7 +37,7 @@ export default function CreateMandate() {
 
   // Prefill with the demo launch on local clusters.
   useEffect(() => {
-    fetch("/demo.json").then((r) => (r.ok ? r.json() : null)).then((d) => {
+    fetch(CLUSTER === "localnet" ? "/demo.json" : `/demo.${CLUSTER}.json`).then((r) => (r.ok ? r.json() : null)).then((d) => {
       if (d) setForm((f) => ({ ...f, baseMint: d.baseMint, quoteMint: d.quoteMint, lbPair: d.lbPair, referencePool: d.dammPool }));
     }).catch(() => {});
   }, []);

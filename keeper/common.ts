@@ -10,7 +10,6 @@ import {
   PublicKey,
   Transaction,
   TransactionInstruction,
-  sendAndConfirmTransaction,
 } from "@solana/web3.js";
 import { MANDATE_PROGRAM_ID, MandateClient, anchorState, decodeDammPool, decodeLbPair, decodeOracleLatest, projectAnchor } from "../sdk/src";
 
@@ -28,7 +27,46 @@ export function makeClient(connection: Connection, wallet: Keypair): MandateClie
 
 export async function sendIxs(connection: Connection, payer: Keypair, ixs: TransactionInstruction[], signers: Keypair[] = []) {
   const tx = new Transaction().add(ComputeBudgetProgram.setComputeUnitLimit({ units: 1_000_000 }), ...ixs);
-  return sendAndConfirmTransaction(connection, tx, [payer, ...signers], { commitment: "confirmed", skipPreflight: false });
+  return sendAndConfirm(connection, tx, [payer, ...signers]);
+}
+
+const isRateLimited = (e: any) => /429|Too many requests/i.test(String(e?.message ?? e));
+
+/** Retry an RPC call with exponential backoff while the node answers 429. */
+export async function withBackoff<T>(fn: () => Promise<T>, tries = 8): Promise<T> {
+  for (let i = 0; ; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (!isRateLimited(e) || i >= tries - 1) throw e;
+      await sleep(Math.min(16_000, 1_000 * 2 ** i));
+    }
+  }
+}
+
+/**
+ * Sign, send and confirm by polling (no websocket), backing off on rate limits. Public
+ * devnet RPC throttles hard; this keeps multi-transaction scripts moving.
+ */
+export async function sendAndConfirm(connection: Connection, tx: Transaction, signers: Keypair[]): Promise<string> {
+  tx.feePayer = tx.feePayer ?? signers[0].publicKey;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { blockhash, lastValidBlockHeight } = await withBackoff(() => connection.getLatestBlockhash("confirmed"));
+    tx.recentBlockhash = blockhash;
+    tx.signatures = [];
+    tx.sign(...signers);
+    const raw = tx.serialize();
+    const sig = await withBackoff(() => connection.sendRawTransaction(raw, { skipPreflight: false, maxRetries: 5 }));
+    for (;;) {
+      await sleep(1_500);
+      const st = (await withBackoff(() => connection.getSignatureStatuses([sig]))).value[0];
+      if (st?.err) throw new Error(`transaction ${sig} failed: ${JSON.stringify(st.err)}`);
+      if (st && (st.confirmationStatus === "confirmed" || st.confirmationStatus === "finalized")) return sig;
+      const height = await withBackoff(() => connection.getBlockHeight("confirmed"));
+      if (height > lastValidBlockHeight) break; // expired: re-sign with a fresh blockhash
+    }
+  }
+  throw new Error("transaction expired three times without confirming");
 }
 
 export interface MandateView {

@@ -1,0 +1,17 @@
+{
+  "cluster": "https://api.devnet.solana.com",
+  "launchpad": "9FD7Eu9X7yykGXR4XTs7nucGoT19mT8sqASiZu85yCph",
+  "router": "AVqmuVDUD9ABYnmgHJwgUjztDRicHU2Rb8m9v6S27GMV",
+  "dbcConfig": "6Gpd6zAwBLyN8VJfXsH7WTn7M71PYmwF272eyDsJ7GcY",
+  "dbcPool": "EW6B1AarQuWJWzcXLsDDCD2pLB5M5NT7ExnA7NdKRVcg",
+  "baseMint": "BF4bAHX6moGs9g5NKZ6amZex3Cr2R1JJA8gh55L8qgNo",
+  "quoteMint": "4qF4Q5Gj9R2k8Wyx9yspNRmj3APKFBQ4oTdGvhJE3Z4x",
+  "dammPool": "DXjRv5VHhrsPwWDo6bYKZcxGVtELUgK4n47tBYefDn43",
+  "lbPair": "G4F9U2h3rxoQD96jYVpfGcF4BVoQuMyeQVrFuTJt3JuH",
+  "mandates": [
+    "EAgBRNBAeFvR2QjtUQevon5832jKAfLjC7B6Gi8fcHSt",
+    "43U9tsTq3uPJGjMdG7CPnnQfj2YqS6RW43f3nUksGsgU"
+  ],
+  "maker": "5fUGKduQtfaD8Q6nrzz6z4BmjbjmLqLCgWqQ7BT3nZzC",
+  "trader": "CMEhB2MZMMZsWMsucqifozJuvueZN7Msvvm9MhYi94dn"
+}

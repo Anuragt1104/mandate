@@ -1,6 +1,7 @@
 /**
  * Runs the full Mandated-launch flow against a cluster and writes the resulting
- * addresses to app/public/demo.json (used by the web app) and .keys/ (bot keypairs).
+ * addresses to app/public/demo.json (used by the web app) and .keys/ (bot keypairs). Off
+ * localnet set CLUSTER (e.g. devnet): outputs go to app/public/demo.devnet.json and .keys/devnet/.
  *
  *   ./scripts/localnet.sh            # in another terminal
  *   npx tsx scripts/demo.ts          # RPC_URL defaults to http://127.0.0.1:8899
@@ -20,7 +21,6 @@ import {
   PublicKey,
   SystemProgram,
   Transaction,
-  sendAndConfirmTransaction,
 } from "@solana/web3.js";
 import {
   MINT_SIZE,
@@ -46,7 +46,7 @@ import {
   deriveDbcPoolAddress,
 } from "@meteora-ag/dynamic-bonding-curve-sdk";
 import { MandateTerms, binArrayIndex, binIdForAtomicPrice, decodeDammPool, dlmmInitBinArrayIx, pda } from "../sdk/src";
-import { RPC_URL, loadKeypair, log, makeClient, sendIxs } from "../keeper/common";
+import { RPC_URL, loadKeypair, log, makeClient, sendAndConfirm, sendIxs } from "../keeper/common";
 
 const ROOT = path.resolve(__dirname, "..");
 const DLMM_PROGRAM_ID = new PublicKey("LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo");
@@ -57,8 +57,7 @@ const DAMM_V2_CONFIG_FIXED_25 = new PublicKey("7F6dnUcRuyM2TwR8myT1dYypFXpPSxqwK
 const DLMM_EVENT_AUTHORITY = PublicKey.findProgramAddressSync([Buffer.from("__event_authority")], DLMM_PROGRAM_ID)[0];
 
 async function sendTx(conn: Connection, tx: Transaction, signers: Keypair[]) {
-  tx.feePayer = tx.feePayer ?? signers[0].publicKey;
-  return sendAndConfirmTransaction(conn, tx, signers, { commitment: "confirmed" });
+  return sendAndConfirm(conn, tx, signers);
 }
 
 async function newMint(conn: Connection, payer: Keypair, decimals: number): Promise<PublicKey> {
@@ -94,13 +93,29 @@ async function ensureAta(conn: Connection, payer: Keypair, mint: PublicKey, owne
 }
 
 async function fund(conn: Connection, payer: Keypair, to: PublicKey, sol: number) {
-  await sendTx(conn, new Transaction().add(SystemProgram.transfer({ fromPubkey: payer.publicKey, toPubkey: to, lamports: sol * LAMPORTS_PER_SOL })), [payer]);
+  const want = Math.round(sol * LAMPORTS_PER_SOL);
+  const have = await conn.getBalance(to);
+  if (have >= want) return;
+  await sendTx(conn, new Transaction().add(SystemProgram.transfer({ fromPubkey: payer.publicKey, toPubkey: to, lamports: want - have })), [payer]);
 }
 
+const CLUSTER_NAME = process.env.CLUSTER ?? "localnet";
+const SUFFIX = CLUSTER_NAME === "localnet" ? "" : `.${CLUSTER_NAME}`;
+
+const KEY_DIR = path.join(ROOT, ".keys", CLUSTER_NAME === "localnet" ? "" : CLUSTER_NAME);
+
 function saveKey(name: string, kp: Keypair) {
-  const dir = path.join(ROOT, ".keys");
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, `${name}.json`), JSON.stringify(Array.from(kp.secretKey)));
+  fs.mkdirSync(KEY_DIR, { recursive: true });
+  fs.writeFileSync(path.join(KEY_DIR, `${name}.json`), JSON.stringify(Array.from(kp.secretKey)));
+}
+
+/** Off localnet, reuse helper keys from a previous run so their SOL is not stranded. */
+function helperKey(name: string): Keypair {
+  const p = path.join(KEY_DIR, `${name}.json`);
+  if (CLUSTER_NAME !== "localnet" && fs.existsSync(p)) return loadKeypair(p);
+  const kp = Keypair.generate();
+  saveKey(name, kp);
+  return kp;
 }
 
 async function createDlmmPair(conn: Connection, payer: Keypair, tokenX: PublicKey, tokenY: PublicKey, activeId: number) {
@@ -142,15 +157,13 @@ async function main() {
   const client = makeClient(conn, launchpad);
   const dbc = new DynamicBondingCurveClient(conn, "confirmed");
 
-  const creator = Keypair.generate();
-  const buyer = Keypair.generate();
-  const maker = Keypair.generate();
-  const trader = Keypair.generate();
+  const creator = helperKey("creator");
+  const buyer = helperKey("buyer");
+  const maker = helperKey("maker");
+  const trader = helperKey("trader");
   // Off localnet, fund just enough: the maker pays for its position and bin arrays.
   const sol = isLocal ? [20, 20, 20, 20] : [0.1, 0.05, 0.4, 0.1];
   for (const [i, k] of [creator, buyer, maker, trader].entries()) await fund(conn, launchpad, k.publicKey, sol[i]);
-  saveKey("maker", maker);
-  saveKey("trader", trader);
 
   const quote = await newMint(conn, launchpad, 6); // demo "USDC"
   await mintTo(conn, launchpad, quote, buyer.publicKey, 1_000_000n * 1_000_000n);
@@ -238,7 +251,7 @@ async function main() {
     maker: maker.publicKey.toBase58(),
     trader: trader.publicKey.toBase58(),
   };
-  const outPath = path.join(ROOT, "app/public/demo.json");
+  const outPath = path.join(ROOT, `app/public/demo${SUFFIX}.json`);
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, JSON.stringify(out, null, 2));
   log("demo", `wrote ${outPath}`);

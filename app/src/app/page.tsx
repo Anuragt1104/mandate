@@ -46,9 +46,9 @@ export default function Board() {
         <span className="eyebrow">Designated market making, enforced on-chain</span>
         <h1>Liquidity you can verify, not just promise.</h1>
         <p className="lede">
-          Each mandate below is a market-making contract on Solana. The issuer&apos;s tokens sit in a vault that can only place quotes on
-          Meteora DLMM near the graduated price. Anyone can check the book at any time. The maker is paid for every compliant period,
-          and its bond is slashed if the book goes empty.
+          Each mandate below is a market-making contract on Solana. The issuer&apos;s tokens sit in a vault that can only quote on
+          Meteora DLMM: bids at or below a manipulation-resistant reference price, asks at or above it. Anyone can check the
+          maker&apos;s quotes at any time. The maker is paid for every compliant period, and its bond is slashed if it stops quoting.
         </p>
       </section>
 

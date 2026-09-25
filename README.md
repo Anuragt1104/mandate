@@ -145,6 +145,23 @@ update. A maker removal that empties the active bin taints older oracle samples,
 DLMM's `go_to_a_bin` could otherwise skew the oracle. `docs/security.md` explains why each
 rule exists and what risk remains.
 
+## Devnet
+
+The program is deployed on devnet at `3YetFVe4F6MuYaHH7pAmTCZjtMnunQT1ufMdAY8rYFrn`
+([explorer](https://explorer.solana.com/address/3YetFVe4F6MuYaHH7pAmTCZjtMnunQT1ufMdAY8rYFrn?cluster=devnet)),
+with its IDL published on-chain. Meteora's DLMM, DAMM v2 and DBC run on devnet at their
+mainnet addresses, but devnet only has DLMM presets for bin step 10, so the devnet demo
+uses one of those. The public devnet RPC rate-limits hard; the scripts back off and retry.
+
+```bash
+CLUSTER=devnet RPC_URL=https://api.devnet.solana.com DLMM_PRESET=4vP4DFDJLRz85NBCfJALYPNdieWwzQSstrUuTms1gekn npx tsx scripts/demo.ts
+```
+
+Off localnet the demo writes `app/public/demo.devnet.json` and keeps helper keys in
+`.keys/devnet/`, reusing them on later runs. Point the bots at devnet with
+`RPC_URL=https://api.devnet.solana.com`, and build the app with
+`NEXT_PUBLIC_RPC_URL=https://api.devnet.solana.com NEXT_PUBLIC_CLUSTER=devnet`.
+
 ## Program
 
 Program ID (localnet and devnet): `3YetFVe4F6MuYaHH7pAmTCZjtMnunQT1ufMdAY8rYFrn`.
