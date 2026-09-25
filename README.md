@@ -2,6 +2,9 @@
 
 Designated market making, enforced on-chain.
 
+**Live app (Solana devnet):** https://mandate-lac-rho.vercel.app. The program is deployed on
+devnet, with a DBC-launched token whose mandate is actively quoted and scored.
+
 Token issuers pay market makers to keep their markets liquid, but those contracts are
 private, and nobody can check whether the maker delivered. Mandate turns the contract into a
 Solana program:
