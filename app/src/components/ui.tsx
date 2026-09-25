@@ -121,11 +121,11 @@ function TestSolButton() {
     } catch {
       setState("failed");
     }
-    setTimeout(() => setState("idle"), 4000);
+    setTimeout(() => setState("idle"), 6000);
   }
   return (
     <button className="btn ghost" onClick={airdrop} disabled={state === "busy"} title="Airdrop 2 SOL on this test cluster">
-      {state === "busy" ? "Requesting…" : state === "done" ? "Received 2 SOL" : state === "failed" ? "Airdrop failed" : "Get test SOL"}
+      {state === "busy" ? "Requesting…" : state === "done" ? "Received 2 SOL" : state === "failed" ? "Faucet busy: try faucet.solana.com" : "Get test SOL"}
     </button>
   );
 }

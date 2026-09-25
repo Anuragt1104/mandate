@@ -38,13 +38,13 @@ function Check({ label, value, target, pass }: { label: string; value: string; t
 export default function MandatePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const key = new PublicKey(id);
-  const { data, error, reload } = usePoll(() => load(key), [id], 5000);
+  const { data, error, reload } = usePoll(() => load(key), [id], 10_000);
   const now = useNow();
   const { me, run, busy } = useMandateActions();
   const [pct, setPct] = useState(90);
   const [halfWidth, setHalfWidth] = useState(8);
 
-  if (error) return <div className="empty" style={{ marginTop: 40 }}>Could not load this mandate: {error}</div>;
+  if (error && !data) return <div className="empty" style={{ marginTop: 40 }}>Could not load this mandate: {error}</div>;
   if (!data) return <div className="empty" style={{ marginTop: 40 }}>Loading mandate…</div>;
   const { m, log, book, balances } = data;
   const t = m.terms;
@@ -133,6 +133,7 @@ export default function MandatePage({ params }: { params: Promise<{ id: string }
           <h1>{short(m.baseMint, 5)} / {short(m.quoteMint, 5)}</h1>
           <StatusChip status={status} />
         </div>
+        {error && <p className="hint">Showing the last loaded data. {error}</p>}
         <div className="addr">
           mandate {short(key, 6)} · issuer {short(m.issuer)} · maker {openToAll ? "open to any maker" : short(m.maker)}
           {isIssuer && " · you are the issuer"}{isMaker && " · you are the maker"}

@@ -23,7 +23,9 @@ export const CLUSTER = process.env.NEXT_PUBLIC_CLUSTER ?? "localnet";
 
 let _conn: Connection | null = null;
 export function connection(): Connection {
-  if (!_conn) _conn = new Connection(RPC_URL, "confirmed");
+  // No automatic retries on 429: usePoll backs off instead, which avoids retry storms
+  // against rate-limited public endpoints.
+  if (!_conn) _conn = new Connection(RPC_URL, { commitment: "confirmed", disableRetryOnRateLimit: true });
   return _conn;
 }
 
@@ -104,9 +106,15 @@ export async function tokenAmounts(accounts: PublicKey[]): Promise<bigint[]> {
   return infos.map((i) => (i ? AccountLayout.decode(i.data).amount : 0n));
 }
 
+const decimalsCache = new Map<string, number>();
 export async function mintDecimals(mint: PublicKey): Promise<number> {
+  const key = mint.toBase58();
+  const hit = decimalsCache.get(key);
+  if (hit !== undefined) return hit;
   const info = await connection().getAccountInfo(mint);
-  return info ? info.data[44] : 6;
+  if (!info) return 6;
+  decimalsCache.set(key, info.data[44]);
+  return info.data[44];
 }
 
 export interface BookBin {
@@ -122,7 +130,10 @@ export interface BookBin {
  */
 export async function fetchBook(m: any) {
   const conn = connection();
-  const [pairInfo, dammInfo, oracleInfo] = await conn.getMultipleAccountsInfo([m.lbPair, m.referencePool, m.oracle]);
+  const hasPos = !(m.position as PublicKey).equals(PublicKey.default);
+  const [pairInfo, dammInfo, oracleInfo, posInfo] = await conn.getMultipleAccountsInfo(
+    hasPos ? [m.lbPair, m.referencePool, m.oracle, m.position] : [m.lbPair, m.referencePool, m.oracle],
+  );
   if (!pairInfo) return null;
   const pair = decodeLbPair(pairInfo.data);
   const [bd, qd] = await Promise.all([mintDecimals(m.baseMint), mintDecimals(m.quoteMint)]);
@@ -139,9 +150,7 @@ export async function fetchBook(m: any) {
   const refBin = projected.bin;
   const refUi = binUi(refBin);
   const bins: BookBin[] = [];
-  const hasPos = !(m.position as PublicKey).equals(PublicKey.default);
   if (hasPos) {
-    const posInfo = await conn.getAccountInfo(m.position);
     if (posInfo) {
       const pos = decodePosition(posInfo.data);
       const arrays = await conn.getMultipleAccountsInfo(binArraysCovering(m.lbPair, pos.lowerBinId, pos.upperBinId));

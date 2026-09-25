@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PublicKey } from "@solana/web3.js";
-import { connection, fetchAllMandates, readClient, short } from "@/lib/chain";
+import { CLUSTER, connection, fetchAllMandates, readClient, short } from "@/lib/chain";
 import { usePoll } from "@/lib/hooks";
 import { StatusChip, Tape, duration, fmt } from "@/components/ui";
 import { statusName } from "../../../sdk/src";
@@ -28,7 +28,7 @@ async function loadBoard() {
 
 export default function Board() {
   const router = useRouter();
-  const { data, error } = usePoll(loadBoard, [], 6000);
+  const { data, error } = usePoll(loadBoard, [], 15_000);
   const [study, setStudy] = useState<any>(null);
   useEffect(() => {
     fetch("/study.json").then((r) => (r.ok ? r.json() : null)).then((d) => setStudy(d?.summary ?? null)).catch(() => {});
@@ -65,8 +65,9 @@ export default function Board() {
           <h2>Mandates</h2>
           <Link className="btn ghost" href="/create">New mandate</Link>
         </div>
-        {error && <div className="empty">Could not reach the cluster ({error}). Check NEXT_PUBLIC_RPC_URL.</div>}
-        {!error && rows.length === 0 && (
+        {error && !data && <div className="empty">Could not reach the cluster: {error}</div>}
+        {error && data && <p className="hint">Showing the last loaded data. {error}</p>}
+        {!error && data && rows.length === 0 && (
           <div className="empty">No mandates on this cluster yet. Run <span className="mono">npx tsx scripts/demo.ts</span> or create one.</div>
         )}
         {rows.length > 0 && (
@@ -140,7 +141,7 @@ export default function Board() {
           Market makers exist to fix this. In crypto their contracts are private and cannot be verified. Mandate turns the contract into a program.
         </p>
       </section>
-      <p className="foot">Amounts are shown in quote-token units (6 decimals). Data refreshes every few seconds from {`the cluster`}.</p>
+      <p className="foot">Amounts are shown in quote-token units (6 decimals). Data refreshes every 15 seconds from Solana {CLUSTER}.</p>
     </div>
   );
 }

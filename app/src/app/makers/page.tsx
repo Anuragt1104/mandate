@@ -5,7 +5,7 @@ import { usePoll } from "@/lib/hooks";
 import { fmt } from "@/components/ui";
 
 export default function Makers() {
-  const { data, error } = usePoll(fetchMakerProfiles, [], 8000);
+  const { data, error } = usePoll(fetchMakerProfiles, [], 20_000);
   const rows = (data ?? [])
     .map(({ p }) => {
       const ok = Number(p.periodsOk);
@@ -25,8 +25,9 @@ export default function Makers() {
         </p>
       </section>
       <section className="panel">
-        {error && <div className="empty">Could not reach the cluster ({error}).</div>}
-        {!error && rows.length === 0 && <div className="empty">No market maker has accepted a mandate on this cluster yet.</div>}
+        {error && !data && <div className="empty">Could not reach the cluster: {error}</div>}
+        {error && data && <p className="hint">Showing the last loaded data. {error}</p>}
+        {!error && data && rows.length === 0 && <div className="empty">No market maker has accepted a mandate on this cluster yet.</div>}
         {rows.length > 0 && (
           <div className="board-wrap">
             <table className="board">
