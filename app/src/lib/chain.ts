@@ -26,10 +26,21 @@ export const CLUSTER = process.env.NEXT_PUBLIC_CLUSTER ?? "localnet";
 const FALLBACKS = (process.env.NEXT_PUBLIC_RPC_FALLBACKS ?? "").split(",").filter(Boolean);
 
 /**
- * Every request goes through a per-method failover across endpoints of the cluster: public
- * devnet can hang on account reads while it still answers everything else.
+ * HTTP requests go through a per-method hedged failover (sdk/src/rpc.ts). In the browser the
+ * first endpoint is the app's own /api/rpc proxy, which reaches the cluster from Vercel's
+ * network, so a throttled client IP doesn't stall the page; direct endpoints are fallbacks.
+ * Websocket subscriptions still use the cluster's own endpoint.
  */
-export const rpcFetch = failoverFetch([RPC_URL, ...(FALLBACKS.length ? FALLBACKS : (PUBLIC_FALLBACKS[CLUSTER] ?? []))], { timeoutMs: 8_000, hedgeMs: 1_500, rounds: 2 });
+const DIRECT = [RPC_URL, ...(FALLBACKS.length ? FALLBACKS : (PUBLIC_FALLBACKS[CLUSTER] ?? []))];
+const USE_PROXY = CLUSTER !== "localnet" && process.env.NEXT_PUBLIC_RPC_PROXY !== "off";
+let _fetch: ReturnType<typeof failoverFetch> | null = null;
+export const rpcFetch = (input: any, init?: any): Promise<Response> => {
+  if (!_fetch) {
+    const proxy = USE_PROXY && typeof window !== "undefined" ? [`${window.location.origin}/api/rpc`] : [];
+    _fetch = failoverFetch([...proxy, ...DIRECT], { timeoutMs: 8_000, hedgeMs: proxy.length ? 2_500 : 1_500, rounds: 2 });
+  }
+  return _fetch(input, init);
+};
 
 let _conn: Connection | null = null;
 export function connection(): Connection {
