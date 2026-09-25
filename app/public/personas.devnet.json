@@ -1,0 +1,98 @@
+{
+  "cluster": "devnet",
+  "generatedBy": "scripts/simulate.ts",
+  "note": "Simulated participants on the Mandate test network. The companies and people are fictional; their transactions are real.",
+  "parties": {
+    "9FD7Eu9X7yykGXR4XTs7nucGoT19mT8sqASiZu85yCph": {
+      "name": "Nova Launchpad",
+      "role": "launchpad",
+      "bio": "Launchpad whose tokens graduate with a liquidity SLA funded from their leftover supply."
+    },
+    "54fEuMqQs3F5gUJ7sMatF8T6sFdj9UJUvmDCixHVzY71": {
+      "name": "Orbit Labs",
+      "role": "issuer",
+      "bio": "Team behind ORBT, launched on Nova."
+    },
+    "GGKuqNbytRTpnVHqCtQkYY5JZUk4PFbSKK9XUeggUNR7": {
+      "name": "Kite Protocol",
+      "role": "issuer",
+      "bio": "Team behind KITE. Bought out its own curve and holds a treasury; re-tenders its SLA after a breach."
+    },
+    "2TsPuDdG7izrKtbKkeri8AvcRJs6XPmWQbCDFxptfyMb": {
+      "name": "Launch buyers",
+      "role": "trader",
+      "bio": "Early buyers who took ORBT through graduation."
+    },
+    "5fUGKduQtfaD8Q6nrzz6z4BmjbjmLqLCgWqQ7BT3nZzC": {
+      "name": "Helios Markets",
+      "role": "maker",
+      "bio": "Diligent market maker: quotes both sides and re-centres as the price moves."
+    },
+    "TZsF5FqVzqRFhxLLfHQSjwjk7RSibsDhybCH8wkkxEL": {
+      "name": "Lazy Capital",
+      "role": "maker",
+      "bio": "Accepts an SLA, quotes for a while, then pulls its liquidity."
+    },
+    "A7kx6b3JyDsB3TWKETbbh12faZ2inqdV1G25F16qe8yt": {
+      "name": "Tidewater Trading",
+      "role": "maker",
+      "bio": "Picks up open SLAs from the board and quotes them."
+    },
+    "A17DKd9KfDoXCRaAaKQ9inhw4aNhxNpnDunPWmKqAQ1X": {
+      "name": "Priya",
+      "role": "trader",
+      "bio": "Retail trader, small sizes."
+    },
+    "BCtkueVYexCjH7MfdKk6yDt4A1YfPC3YDmAKMyq8XneT": {
+      "name": "Marco",
+      "role": "trader",
+      "bio": "Retail trader, small sizes."
+    },
+    "EbGUVXaE2RiThrpPem3u9sFV3uBfV5cPUncspdokR1bn": {
+      "name": "Jun",
+      "role": "trader",
+      "bio": "Retail trader, small sizes."
+    },
+    "6eTbabXfAy1vcAxngfPXw9Y2nsqufLEV2QUucN2rhNP2": {
+      "name": "Ferro Capital",
+      "role": "whale",
+      "bio": "Occasional block trades that move the price."
+    },
+    "FYMc5oT22yT4GVRUX4yh8jSniDEpB5WYLxtAsw9py17N": {
+      "name": "Mallory",
+      "role": "attacker",
+      "bio": "Buys out the asks and forces a check in the same transaction, hoping to fake a result."
+    },
+    "9wk1RenPCaCc8WvqpWLJgwPfL1bivCSFMQs8i1DnSWUY": {
+      "name": "Watchtower",
+      "role": "watchtower",
+      "bio": "Checks every live SLA at random times. Anyone can run one."
+    }
+  },
+  "mandates": {
+    "mand": "EAgBRNBAeFvR2QjtUQevon5832jKAfLjC7B6Gi8fcHSt",
+    "orbt": "6WmQchUyJqaixsAZfrLyw9puD2HkLiCcBgZZxYmvhgHT",
+    "kite": "Foeed8kvo4qfVU7uVZ2hUybrJusyEUNkyRsdnWbe8hbi"
+  },
+  "tokens": {
+    "4qF4Q5Gj9R2k8Wyx9yspNRmj3APKFBQ4oTdGvhJE3Z4x": {
+      "symbol": "USDC",
+      "name": "Test USDC"
+    }
+  },
+  "quoteMint": "4qF4Q5Gj9R2k8Wyx9yspNRmj3APKFBQ4oTdGvhJE3Z4x",
+  "markets": {
+    "orbt": {
+      "symbol": "ORBT",
+      "mint": "AgX5J8gvV6h5Af4rKMF6mvUpqE5hzBqnmYXn7W8hzCao",
+      "dammPool": "BJT51xX6bkaKFLXnPvhCWMMV14pjLonoga9PDhi3E3H4",
+      "lbPair": "9FBTe72om5kqF6gKBovvZ2TYGkAE53mNnpb5kFayugw6"
+    },
+    "kite": {
+      "symbol": "KITE",
+      "mint": "CoQV8QdWNaGaewCJAsPM396PV3D7XXCdduYfwjxNnJWS",
+      "dammPool": "2yKr6dWWhVqCpS44kvsdM5CoFKv2ypo3mcP2j7BC1phB",
+      "lbPair": "3w8YKSiTSbiEQSSJ82ezurMrMJRXyuT3McnqpCx5NZMv"
+    }
+  }
+}
