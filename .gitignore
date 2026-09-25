@@ -11,3 +11,5 @@ test-ledger/
 .DS_Store
 tests/idl/*.json
 !tests/idl/dlmm.json
+.keys/
+app/public/demo.json

@@ -490,3 +490,24 @@ export class MandateClient {
     return this.program.coder.accounts.decode("makerProfile", Buffer.from(data));
   }
 }
+
+// ---------------------------------------------------------------------------
+// DLMM helpers (permissionless instructions used by makers / launch flows)
+// ---------------------------------------------------------------------------
+
+/** DLMM `initialize_bin_array` (permissionless; funder pays rent). */
+export function dlmmInitBinArrayIx(lbPair: PublicKey, index: number, funder: PublicKey): TransactionInstruction {
+  const data = Buffer.alloc(16);
+  Buffer.from([35, 86, 19, 185, 78, 212, 75, 211]).copy(data, 0);
+  data.writeBigInt64LE(BigInt(index), 8);
+  return new TransactionInstruction({
+    programId: DLMM_PROGRAM_ID,
+    keys: [
+      { pubkey: lbPair, isSigner: false, isWritable: false },
+      { pubkey: pda.binArray(lbPair, index), isSigner: false, isWritable: true },
+      { pubkey: funder, isSigner: true, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data,
+  });
+}
