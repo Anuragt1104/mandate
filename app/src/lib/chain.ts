@@ -1,5 +1,6 @@
 "use client";
 
+import { Buffer } from "buffer";
 import { AnchorProvider, Idl, Program } from "@coral-xyz/anchor";
 import { Connection, Keypair, PublicKey, Transaction } from "@solana/web3.js";
 import { AccountLayout } from "@solana/spl-token";
@@ -43,9 +44,64 @@ export function readClient(): MandateClient {
   return _ro;
 }
 
+function explorerSuffix() {
+  return CLUSTER === "localnet" ? `?cluster=custom&customUrl=${encodeURIComponent(RPC_URL)}` : CLUSTER === "devnet" ? "?cluster=devnet" : "";
+}
 export function explorerUrl(sig: string) {
-  const custom = CLUSTER === "localnet" ? `?cluster=custom&customUrl=${encodeURIComponent(RPC_URL)}` : CLUSTER === "devnet" ? "?cluster=devnet" : "";
-  return `https://explorer.solana.com/tx/${sig}${custom}`;
+  return `https://explorer.solana.com/tx/${sig}${explorerSuffix()}`;
+}
+export function explorerAddress(address: PublicKey | string) {
+  return `https://explorer.solana.com/address/${typeof address === "string" ? address : address.toBase58()}${explorerSuffix()}`;
+}
+
+// ---------------------------------------------------------------------------
+// Token labels (Metaplex metadata, with a few well-known mints)
+// ---------------------------------------------------------------------------
+
+export interface TokenLabel {
+  symbol: string;
+  name: string;
+}
+
+const MPL_TOKEN_METADATA = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
+const KNOWN_TOKENS: Record<string, TokenLabel> = {
+  EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: { symbol: "USDC", name: "USD Coin" },
+  So11111111111111111111111111111111111111112: { symbol: "SOL", name: "Wrapped SOL" },
+  // Quote token minted by the devnet demo (scripts/demo.ts); it has no metadata account.
+  "4qF4Q5Gj9R2k8Wyx9yspNRmj3APKFBQ4oTdGvhJE3Z4x": { symbol: "USDC", name: "Test USDC (devnet)" },
+};
+const labelCache = new Map<string, TokenLabel>(Object.entries(KNOWN_TOKENS));
+
+function readBorshString(d: Uint8Array, o: number): [string, number] {
+  const len = d[o] | (d[o + 1] << 8) | (d[o + 2] << 16) | (d[o + 3] << 24);
+  const bytes = d.subarray(o + 4, o + 4 + len);
+  return [new TextDecoder().decode(bytes).replace(/\0/g, "").trim(), o + 4 + len];
+}
+
+/** Symbol and name for each mint; falls back to a shortened address. */
+export async function fetchTokenLabels(mints: PublicKey[]): Promise<Record<string, TokenLabel>> {
+  const missing = [...new Set(mints.map((m) => m.toBase58()))].filter((m) => !labelCache.has(m));
+  if (missing.length) {
+    const pdas = missing.map(
+      (m) => PublicKey.findProgramAddressSync([Buffer.from("metadata"), MPL_TOKEN_METADATA.toBuffer(), new PublicKey(m).toBuffer()], MPL_TOKEN_METADATA)[0],
+    );
+    const infos = await connection().getMultipleAccountsInfo(pdas);
+    missing.forEach((m, i) => {
+      const info = infos[i];
+      let label: TokenLabel = { symbol: short(m, 3), name: m };
+      if (info && info.data.length > 70) {
+        try {
+          const [name, next] = readBorshString(info.data, 65);
+          const [symbol] = readBorshString(info.data, next);
+          if (symbol) label = { symbol, name: name || symbol };
+        } catch {
+          /* keep the fallback */
+        }
+      }
+      labelCache.set(m, label);
+    });
+  }
+  return Object.fromEntries(mints.map((m) => [m.toBase58(), labelCache.get(m.toBase58())!]));
 }
 
 export const short = (k: PublicKey | string, n = 4) => {

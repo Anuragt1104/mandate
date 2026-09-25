@@ -5,6 +5,7 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
 import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
 import { UnsafeBurnerWalletAdapter } from "@solana/wallet-adapter-unsafe-burner";
+import { CircleAlert, CircleCheck, X } from "lucide-react";
 import { CLUSTER, RPC_URL } from "@/lib/chain";
 import "@solana/wallet-adapter-react-ui/styles.css";
 
@@ -21,7 +22,7 @@ export function Providers({ children }: { children: ReactNode }) {
   const [toast, setToast] = useState<Toast>(null);
   const show = useCallback((t: Toast) => {
     setToast(t);
-    if (t) setTimeout(() => setToast((cur) => (cur === t ? null : cur)), 7000);
+    if (t) setTimeout(() => setToast((cur) => (cur === t ? null : cur)), t.kind === "error" ? 12000 : 9000);
   }, []);
   return (
     <ConnectionProvider endpoint={RPC_URL} config={{ commitment: "confirmed" }}>
@@ -30,8 +31,13 @@ export function Providers({ children }: { children: ReactNode }) {
           <ToastCtx.Provider value={show}>
             {children}
             {toast && (
-              <div className={`toast ${toast.kind === "error" ? "error" : ""}`} role="status">
-                {toast.text} {toast.href && <a href={toast.href} target="_blank" rel="noreferrer">View transaction ↗</a>}
+              <div className={`toast ${toast.kind}`} role={toast.kind === "error" ? "alert" : "status"}>
+                {toast.kind === "error" ? <CircleAlert /> : <CircleCheck />}
+                <div style={{ display: "grid", gap: 4 }}>
+                  <span>{toast.text}</span>
+                  {toast.href && <a href={toast.href} target="_blank" rel="noreferrer">View transaction on Explorer</a>}
+                </div>
+                <button className="close" onClick={() => setToast(null)} aria-label="Dismiss"><X /></button>
               </div>
             )}
           </ToastCtx.Provider>

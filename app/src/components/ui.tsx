@@ -1,131 +1,240 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import dynamic from "next/dynamic";
-import { useState } from "react";
-import { useConnection, useWallet } from "@solana/wallet-adapter-react";
-import { LAMPORTS_PER_SOL } from "@solana/web3.js";
-import { CLUSTER } from "@/lib/chain";
+import { useState, type ReactNode } from "react";
+import { PublicKey } from "@solana/web3.js";
+import { Check, Copy, ExternalLink, Info, Minus, X } from "lucide-react";
+import { explorerAddress, type TokenLabel } from "@/lib/chain";
 
-const WalletMultiButton = dynamic(() => import("@solana/wallet-adapter-react-ui").then((m) => m.WalletMultiButton), { ssr: false });
-
-const NAV = [
-  { href: "/", label: "Mandates" },
-  { href: "/makers", label: "Market makers" },
-  { href: "/create", label: "New mandate" },
-  { href: "/launch", label: "Launch" },
-  { href: "/study", label: "Liquidity study" },
-];
-
-export function Header() {
-  const path = usePathname();
-  return (
-    <header className="topbar">
-      <div className="topbar-inner">
-        <Link href="/" className="wordmark" aria-label="Mandate home">
-          <span className="plaque">M</span>Mandate
-        </Link>
-        <nav className="nav" aria-label="Main">
-          {NAV.map((n) => (
-            <Link key={n.href} href={n.href} aria-current={path === n.href ? "page" : undefined}>
-              {n.label}
-            </Link>
-          ))}
-        </nav>
-        <span className="spacer" />
-        <span className="cluster" title="Cluster">{CLUSTER}</span>
-        {CLUSTER !== "mainnet" && <TestSolButton />}
-        <WalletMultiButton />
-      </div>
-    </header>
-  );
-}
-
-export function StatusChip({ status }: { status: string }) {
-  return <span className={`chip ${status.toLowerCase()}`}>{status}</span>;
-}
-
-/** One cell per scoring period. `live` is the period currently being observed. */
-export function Tape({
-  entries,
-  live,
-  total,
-  large = false,
-}: {
-  entries: { status: number }[];
-  live?: { failed: boolean } | null;
-  total?: number;
-  large?: boolean;
-}) {
-  const cls = (s: number) => (s === 1 ? "ok" : s === 2 ? "failed" : s === 3 ? "unobserved" : "");
-  const pending = total ? Math.max(0, Math.min(total - entries.length - (live ? 1 : 0), large ? 48 : 12)) : 0;
-  const label = `${entries.filter((e) => e.status === 1).length} compliant, ${entries.filter((e) => e.status === 2).length} failed, ${entries.filter((e) => e.status === 3).length} unobserved periods`;
-  return (
-    <div className={`tape ${large ? "large" : ""}`} role="img" aria-label={label}>
-      {entries.map((e, i) => (
-        <span key={i} className={`cell ${cls(e.status)}`} />
-      ))}
-      {live && <span className={`cell live ${live.failed ? "bad" : ""}`} title="Current period" />}
-      {Array.from({ length: pending }).map((_, i) => (
-        <span key={`p${i}`} className="cell" />
-      ))}
-    </div>
-  );
-}
-
-export function TapeLegend() {
-  return (
-    <div className="tape-legend">
-      <span><i style={{ background: "var(--ok)" }} />Compliant</span>
-      <span><i style={{ background: "var(--fail)" }} />Failed</span>
-      <span><i style={{ background: "var(--idle)", opacity: 0.55 }} />Not observed</span>
-      <span><i style={{ background: "repeating-linear-gradient(135deg, var(--ok) 0 3px, transparent 3px 6px)", border: "1px solid var(--ok)" }} />In progress</span>
-    </div>
-  );
-}
+// ---------------------------------------------------------------- formatting
 
 export function fmt(n: number, digits = 2) {
   if (!isFinite(n)) return "—";
-  if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(digits)}M`;
-  if (Math.abs(n) >= 10_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toLocaleString(undefined, { maximumFractionDigits: digits });
+  const a = Math.abs(n);
+  if (a >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
+  if (a >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
+  if (a >= 1e4) return `${(n / 1e3).toFixed(1)}K`;
+  return n.toLocaleString("en-US", { maximumFractionDigits: digits });
+}
+
+export function fmtFull(n: number, digits = 2) {
+  if (!isFinite(n)) return "—";
+  return n.toLocaleString("en-US", { maximumFractionDigits: digits });
 }
 
 export function fmtPrice(p: number) {
   if (!p || !isFinite(p)) return "—";
-  if (p >= 1) return p.toFixed(4);
+  if (p >= 1) return p.toLocaleString("en-US", { maximumFractionDigits: 4 });
   const digits = Math.min(12, Math.max(4, -Math.floor(Math.log10(p)) + 3));
   return p.toFixed(digits);
 }
 
 export function duration(secs: number) {
+  secs = Math.max(0, Math.round(secs));
   if (secs < 90) return `${secs}s`;
   if (secs < 5400) return `${Math.round(secs / 60)} min`;
   if (secs < 172800) return `${Math.round(secs / 3600)} h`;
   return `${Math.round(secs / 86400)} days`;
 }
 
-/** Test-cluster convenience: airdrop SOL to the connected wallet. */
-function TestSolButton() {
-  const { connection } = useConnection();
-  const { publicKey } = useWallet();
-  const [state, setState] = useState<"idle" | "busy" | "done" | "failed">("idle");
-  if (!publicKey) return null;
-  async function airdrop() {
-    setState("busy");
+export function countdown(secs: number) {
+  secs = Math.max(0, Math.round(secs));
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return m ? `${m}m ${String(s).padStart(2, "0")}s` : `${s}s`;
+}
+
+export function ago(secs: number) {
+  if (secs < 5) return "just now";
+  if (secs < 60) return `${Math.round(secs)}s ago`;
+  if (secs < 3600) return `${Math.round(secs / 60)} min ago`;
+  if (secs < 86400) return `${Math.round(secs / 3600)} h ago`;
+  return `${Math.round(secs / 86400)} d ago`;
+}
+
+export const shortAddr = (k: PublicKey | string, n = 4) => {
+  const s = typeof k === "string" ? k : k.toBase58();
+  return `${s.slice(0, n)}…${s.slice(-n)}`;
+};
+
+function hash(s: string) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
+
+// ---------------------------------------------------------------- status
+
+export type StatusName = "Open" | "Active" | "Breached" | "Expired" | "Settled" | "Cancelled";
+
+export const STATUS_META: Record<StatusName, { label: string; cls: string; hint: string }> = {
+  Open: { label: "Open to makers", cls: "open", hint: "Funded by the issuer and waiting for a market maker to accept." },
+  Active: { label: "Active", cls: "active", hint: "A maker has posted its bond and is being scored every period." },
+  Breached: { label: "Breached", cls: "breached", hint: "The maker failed too many periods in a row and was slashed." },
+  Expired: { label: "Term ended", cls: "ended", hint: "The term ran to the end. Funds can be unwound and settled." },
+  Settled: { label: "Settled", cls: "ended", hint: "All funds have been distributed." },
+  Cancelled: { label: "Cancelled", cls: "ended", hint: "The issuer cancelled before a maker accepted." },
+};
+
+export function StatusPill({ status }: { status: StatusName }) {
+  const meta = STATUS_META[status] ?? STATUS_META.Open;
+  return <span className={`pill ${meta.cls}`}>{meta.label}</span>;
+}
+
+export function StatusIcon({ pass }: { pass: boolean | null }) {
+  if (pass === null) return <span className="status-icon none"><Minus /></span>;
+  return <span className={`status-icon ${pass ? "pass" : "fail"}`}>{pass ? <Check /> : <X />}</span>;
+}
+
+// ---------------------------------------------------------------- tooltips
+
+export function Tip({ content, children, className = "" }: { content: ReactNode; children: ReactNode; className?: string }) {
+  return (
+    <span className={`tip ${className}`}>
+      {children}
+      <span className="tip-body" role="tooltip">{content}</span>
+    </span>
+  );
+}
+
+export function InfoTip({ children }: { children: ReactNode }) {
+  return (
+    <Tip content={children}>
+      <span className="info-dot" tabIndex={0} aria-label="More information"><Info /></span>
+    </Tip>
+  );
+}
+
+// ---------------------------------------------------------------- glyphs
+
+/** Deterministic 5×5 symmetric identicon for a wallet or account. */
+export function Identicon({ address, size = 22 }: { address: PublicKey | string; size?: number }) {
+  const s = typeof address === "string" ? address : address.toBase58();
+  const h = hash(s);
+  const hue = h % 360;
+  const cells: boolean[] = [];
+  for (let i = 0; i < 15; i++) cells.push(((h >>> i) & 1) === 1 || (hash(s + i) & 3) === 0);
+  const fg = `hsl(${hue} 62% 48%)`;
+  const bg = `hsl(${hue} 60% 94%)`;
+  return (
+    <svg className="glyph" width={size} height={size} viewBox="0 0 5 5" aria-hidden="true" style={{ background: bg }}>
+      {cells.map((on, i) => {
+        if (!on) return null;
+        const x = Math.floor(i / 5);
+        const y = i % 5;
+        return (
+          <g key={i} fill={fg}>
+            <rect x={x} y={y} width="1" height="1" />
+            <rect x={4 - x} y={y} width="1" height="1" />
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+export function TokenGlyph({ mint, label, size = 26 }: { mint: PublicKey | string; label?: TokenLabel; size?: number }) {
+  const s = typeof mint === "string" ? mint : mint.toBase58();
+  const symbol = label?.symbol ?? s.slice(0, 2);
+  const known: Record<string, string> = { USDC: "#2775ca", SOL: "#7c5cff" };
+  const hue = hash(s) % 360;
+  const bg = known[symbol] ?? `linear-gradient(140deg, hsl(${hue} 70% 52%), hsl(${(hue + 40) % 360} 70% 38%))`;
+  return (
+    <span className="token-glyph" style={{ width: size, height: size, background: bg, fontSize: Math.round(size * 0.36) }} aria-hidden="true">
+      {symbol.slice(0, symbol.length > 3 ? 1 : 2).toUpperCase()}
+    </span>
+  );
+}
+
+export function TokenPair({
+  base,
+  quote,
+  labels,
+  size = 28,
+  sub,
+}: {
+  base: PublicKey;
+  quote: PublicKey;
+  labels?: Record<string, TokenLabel>;
+  size?: number;
+  sub?: ReactNode;
+}) {
+  const b = labels?.[base.toBase58()];
+  const q = labels?.[quote.toBase58()];
+  return (
+    <span className="pair">
+      <span className="pair-glyphs">
+        <TokenGlyph mint={base} label={b} size={size} />
+        <TokenGlyph mint={quote} label={q} size={size} />
+      </span>
+      <span style={{ display: "grid", minWidth: 0 }}>
+        <span className="pair-name">
+          {b?.symbol ?? shortAddr(base, 3)}
+          <span className="sep">/</span>
+          {q?.symbol ?? shortAddr(quote, 3)}
+        </span>
+        {sub && <span className="xs muted">{sub}</span>}
+      </span>
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------- addresses
+
+export function Address({
+  value,
+  chars = 4,
+  copy = true,
+  explorer = true,
+  glyph = false,
+}: {
+  value: PublicKey | string;
+  chars?: number;
+  copy?: boolean;
+  explorer?: boolean;
+  glyph?: boolean;
+}) {
+  const s = typeof value === "string" ? value : value.toBase58();
+  const [copied, setCopied] = useState(false);
+  async function doCopy(e: React.MouseEvent) {
+    e.stopPropagation();
     try {
-      const sig = await connection.requestAirdrop(publicKey!, 2 * LAMPORTS_PER_SOL);
-      await connection.confirmTransaction(sig, "confirmed");
-      setState("done");
+      await navigator.clipboard.writeText(s);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1400);
     } catch {
-      setState("failed");
+      /* clipboard unavailable */
     }
-    setTimeout(() => setState("idle"), 6000);
   }
   return (
-    <button className="btn ghost" onClick={airdrop} disabled={state === "busy"} title="Airdrop 2 SOL on this test cluster">
-      {state === "busy" ? "Requesting…" : state === "done" ? "Received 2 SOL" : state === "failed" ? "Faucet busy: try faucet.solana.com" : "Get test SOL"}
-    </button>
+    <span className="addr">
+      {glyph && <Identicon address={s} size={16} />}
+      <span title={s}>{shortAddr(s, chars)}</span>
+      {copy && (
+        <button className="icon-btn" onClick={doCopy} aria-label={copied ? "Copied" : "Copy address"} title={copied ? "Copied" : "Copy address"}>
+          {copied ? <Check /> : <Copy />}
+        </button>
+      )}
+      {explorer && (
+        <a className="icon-btn" href={explorerAddress(s)} target="_blank" rel="noreferrer" aria-label="Open in Solana Explorer" title="Open in Solana Explorer" onClick={(e) => e.stopPropagation()}>
+          <ExternalLink />
+        </a>
+      )}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------- misc
+
+export function Skeleton({ w = "100%", h = 14, style }: { w?: number | string; h?: number | string; style?: React.CSSProperties }) {
+  return <span className="skeleton" style={{ display: "block", width: w, height: h, ...style }} />;
+}
+
+export function Kpi({ label, value, sub, info }: { label: string; value: ReactNode; sub?: ReactNode; info?: ReactNode }) {
+  return (
+    <div className="kpi">
+      <div className="kpi-label">{label}{info && <InfoTip>{info}</InfoTip>}</div>
+      <div className="kpi-value">{value}</div>
+      {sub && <div className="kpi-sub">{sub}</div>}
+    </div>
   );
 }

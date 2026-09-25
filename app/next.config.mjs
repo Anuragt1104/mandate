@@ -7,6 +7,15 @@ const mod = (m) => path.join(here, "node_modules", m);
 /** @type {import('next').NextConfig} */
 export default {
   reactStrictMode: true,
+  async redirects() {
+    return [
+      { source: "/mandate/:id", destination: "/app/mandate/:id", permanent: true },
+      { source: "/makers", destination: "/app/makers", permanent: true },
+      { source: "/create", destination: "/app/create", permanent: true },
+      { source: "/launch", destination: "/app/launch", permanent: true },
+      { source: "/study", destination: "/research", permanent: true },
+    ];
+  },
   // The shared SDK and the program IDL live outside the app directory.
   experimental: { externalDir: true },
   outputFileTracingRoot: path.join(here, ".."),
