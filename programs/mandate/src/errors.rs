@@ -24,6 +24,8 @@ pub enum MandateError {
     BaseBelowReference,
     #[msg("Oracle account does not match the DLMM pair")]
     OracleMismatch,
+    #[msg("Base mint has a freeze authority, which could freeze the mandate's vault")]
+    FreezableBaseMint,
     #[msg("Liquidity range is outside the mandate position")]
     RangeOutsidePosition,
     #[msg("Mandate already has an open position")]

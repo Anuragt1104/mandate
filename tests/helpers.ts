@@ -147,7 +147,7 @@ export function dlmmProgram(): Program<any> {
 // SPL token helpers
 // ---------------------------------------------------------------------------
 
-export function createMint(svm: LiteSVM, payer: Keypair, decimals: number, authority = payer.publicKey): PublicKey {
+export function createMint(svm: LiteSVM, payer: Keypair, decimals: number, authority = payer.publicKey, freezeAuthority: PublicKey | null = null): PublicKey {
   const mint = Keypair.generate();
   const rent = svm.minimumBalanceForRentExemption(BigInt(MINT_SIZE));
   send(
@@ -161,7 +161,7 @@ export function createMint(svm: LiteSVM, payer: Keypair, decimals: number, autho
         space: MINT_SIZE,
         programId: TOKEN_PROGRAM_ID,
       }),
-      createInitializeMint2Instruction(mint.publicKey, decimals, authority, null),
+      createInitializeMint2Instruction(mint.publicKey, decimals, authority, freezeAuthority),
     ],
     [mint],
   );

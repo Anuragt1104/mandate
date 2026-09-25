@@ -13,3 +13,4 @@ tests/idl/*.json
 !tests/idl/dlmm.json
 .keys/
 app/public/demo.json
+*.tsbuildinfo

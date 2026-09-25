@@ -92,6 +92,9 @@ pub fn create_mandate(ctx: Context<CreateMandate>, id: u64, args: CreateMandateA
     let base_key = ctx.accounts.base_mint.key();
     let quote_key = ctx.accounts.quote_mint.key();
     require_keys_neq!(base_key, quote_key, MandateError::InvalidParams);
+    // Whoever holds a freeze authority could freeze the vault and stop the maker from
+    // managing liquidity, then collect the slashed bond.
+    require!(ctx.accounts.base_mint.freeze_authority.is_none(), MandateError::FreezableBaseMint);
 
     let pair = dlmm::read_lb_pair(&ctx.accounts.lb_pair)?;
     require!(

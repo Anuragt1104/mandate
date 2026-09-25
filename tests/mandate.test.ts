@@ -95,6 +95,18 @@ describe("mandate (LiteSVM + mainnet Meteora DLMM)", () => {
     expect(logs.join("\n")).to.contain("PairMintMismatch");
   });
 
+  it("rejects a base mint with a freeze authority", async () => {
+    const mintAuth = fundedKeypair(svm);
+    const freezable = createMint(svm, mintAuth, 6, mintAuth.publicKey, mintAuth.publicKey);
+    const fpair = createDlmmPair(svm, issuer, freezable, quote, 25, 0);
+    ensureAta(svm, issuer, freezable, issuer.publicKey);
+    const ix = await client.createMandate({
+      issuer: issuer.publicKey, baseMint: freezable, quoteMint: quote, lbPair: fpair.lbPair, referencePool, id: 98, terms: TERMS,
+      baseDeposit: new BN(0), quoteDeposit: new BN(0), feeBudget: new BN(0),
+    });
+    expect(sendExpectFail(svm, issuer, [ix]).join("\n")).to.contain("FreezableBaseMint");
+  });
+
   it("issuer creates and funds a mandate", async () => {
     mandate = pda.mandate(issuer.publicKey, base, 1);
     const ix = await client.createMandate({

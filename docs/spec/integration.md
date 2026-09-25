@@ -41,6 +41,10 @@ Positions wider than 70 bins store extra data after the fixed part ("dynamic pos
 
 **BinArray** (10136 bytes, disc `[92,142,92,220,5,148,70,181]`): index i64 @8, lb_pair @24, bins @56, 70 × Bin (144 bytes each). Within a Bin: amount_x u64 @0, amount_y u64 @8, price u128 (Q64.64) @16, liquidity_supply u128 @32.
 
+**Oracle** (disc `[139,194,131,179,140,179,229,244]`, PDA `["oracle", lb_pair]`): idx u64 @8, active_size u64 @16, length u64 @24, then `length` × Observation (32 bytes) from @32: cumulative_active_bin_id i128 @0, created_at i64 @16, last_updated_at i64 @24. New pairs get length 100. The latest sample is `observations[idx]`; `active_size == 0` until the first swap. Verified in LiteSVM against the mainnet binary: before each swap DLMM adds `active_id × (now − last_updated_at)` using the pre-swap active bin, like Uniswap v2's accumulator.
+
+**Oracle caveat (reproduced, `tests/anchor.test.ts`):** the permissionless `go_to_a_bin` moves the active bin across empty bins without touching the oracle (it does not even take the oracle account). The next swap then credits the new bin for all the time since the previous update. It needs the active bin and every bin to the target to be empty (`BinRangeIsNotEmpty` otherwise). In the test, emptying the edge bins, jumping to bin 200 after 600 idle seconds and swapping 1,000 atoms added 120,000 to the cumulative (honest: ~3,600).
+
 ## DLMM — math & PDAs
 - Price (Q64.64, token_y atomic per token_x atomic) = `(1 + bin_step/10_000)^bin_id`, computed as `pow(ONE + (bin_step << 64)/10_000, bin_id)` (commons/src/math/price_math.rs).
 - Bin array index = `floor(bin_id / 70)` (floor toward −∞). PDA seeds: `["bin_array", lb_pair, index i64 LE]`.
@@ -67,7 +71,7 @@ Strategy enum order: SpotOneSide=0, CurveOneSide, BidAskOneSide, SpotBalanced=3,
 ## DAMM v2 — reference price
 **Pool** (1112 bytes, disc `[241,154,109,4,17,177,109,188]`): token_a_mint @168, token_b_mint @200, liquidity u128 @360, sqrt_min_price @424, sqrt_max_price @440, **sqrt_price u128 Q64.64 @456**, pool_status @481.
 - DBC migration creates the DAMM v2 pool with **token_a = base, token_b = quote** (dynamic-bonding-curve `migrate_damm_v2_initialize_pool.rs` L183–184, L217–218, L389–390). So `price_quote_per_base (Q64.64) = sqrt_price² >> 64`.
-- DAMM v2 has no on-chain TWAP. Mandate therefore (a) uses the graduated pool, whose liquidity is ≥10% permanently locked by DBC rules, as the reference; (b) requires |DLMM active price / reference − 1| ≤ `max_ref_deviation_bps` at every snapshot; and (c) bounds all mandated liquidity to a band around the reference.
+- DAMM v2 has no on-chain TWAP, and any spot price can be pushed and pushed back inside one transaction. Mandate therefore does **not** use the DAMM v2 price for anything that is enforced. The reference price is the DLMM pair's own oracle TWAP, followed at a bounded speed (see `programs/mandate/src/anchor.rs` and `docs/security.md`). The graduated DAMM v2 pool is recorded on the mandate and each snapshot stores the reference's deviation from it, for dashboards only.
 - DAMM v2 configs that DBC uses for migration (pool_creator_authority = DBC pool authority) are saved in `fixtures/accounts/` (FixedBps25/30/100/200/400/600 and Customizable).
 
 ## DBC — what Mandate relies on
@@ -79,6 +83,7 @@ Strategy enum order: SpotOneSide=0, CurveOneSide, BidAskOneSide, SpotBalanced=3,
 ## Local testing approach
 Meteora's own DBC tests use **LiteSVM (npm `litesvm`) + mainnet `.so` fixtures** (`vendor/dynamic-bonding-curve/tests/utils`). Mandate uses the same approach: load `mandate.so`, `dlmm.so`, `damm_v2.so`, `dbc.so` and `mpl_token_metadata.so` at their mainnet IDs, inject preset/config accounts from `fixtures/accounts/*.json`, and control the clock with `setClock` to test hourly scoring periods.
 
-## Open items / UNVERIFIED
-- Whether mainnet DLMM rejects CPI `add_liquidity_by_strategy2` from a PDA sender (dlmm-sdk issue #114, "AccountBorrowFailed"). **This is the first thing the test suite checks.**
-- The DBC fixed-supply config parameters (`tokenSupply`, `preMigrationTokenSupply`, `postMigrationTokenSupply`) that produce a non-zero leftover — to be confirmed in the launch test.
+## Resolved items
+- Mainnet DLMM accepts `add_liquidity_by_strategy2`, `remove_liquidity_by_range2`, `claim_fee2` and `close_position2` via CPI from a PDA owner (dlmm-sdk issue #114 did not reproduce). Covered by every liquidity test.
+- A fixed-supply DBC config with `leftover` set produces a non-zero leftover after migration (`tests/launch.test.ts`).
+- DLMM refuses to close a position with unclaimed fees (`NonEmptyPosition`), and `remove_liquidity_by_range2` on an empty range succeeds. Mandate's `remove_liquidity` accepts `bps = 0` with `claim_fees` so an unwind can never get stuck.
