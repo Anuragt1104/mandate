@@ -13,18 +13,21 @@ pub struct MandateTerms {
     pub duration_periods: u32,
     /// Quote the maker must post as a performance bond.
     pub bond_amount: u64,
-    /// Max distance between best bid and best ask, in bps.
+    /// Max quoted spread around the reference price, in bps, measured at a size of
+    /// `min_depth_quote / SPREAD_SIZE_DIVISOR` on each side.
     pub max_spread_bps: u16,
-    /// Min quote-denominated depth on each side within `depth_window_bps` of the active price.
+    /// Min committed liquidity (quote value) on each side within `depth_window_bps` of the reference.
     pub min_depth_quote: u64,
-    /// Window around the active price in which depth is measured, in bps.
+    /// Window around the reference price in which committed liquidity is counted, in bps.
     pub depth_window_bps: u16,
-    /// Mandated liquidity may only sit in bins priced within ±band of the reference price.
+    /// Mandated liquidity may only be placed in bins priced within ±band of the reference price.
     pub band_bps: u16,
-    /// Max allowed deviation of the DLMM active price from the reference price, in bps.
-    pub max_ref_deviation_bps: u16,
-    /// Min seconds between two snapshots (anti-spam).
-    pub min_snapshot_interval_secs: u32,
+    /// Length of the DLMM oracle TWAP window the reference follows, in seconds.
+    pub anchor_twap_secs: u32,
+    /// Max speed at which the reference price may move toward the TWAP, in bps per minute.
+    pub anchor_speed_bps_per_min: u16,
+    /// Liquidity added while active must stay deployed at least this long before removal.
+    pub liquidity_lock_secs: u32,
     /// Consecutive failed periods that trigger a slash.
     pub max_consecutive_failures: u16,
     /// Share of the bond transferred to the issuer on breach, in bps.
@@ -52,11 +55,36 @@ pub enum MandateStatus {
 pub struct Measurement {
     pub ts: i64,
     pub ok: bool,
+    /// Quoted spread at size around the reference (u16::MAX when a side is missing).
     pub spread_bps: u16,
+    /// Committed liquidity (quote value) at or below the reference, within the window.
     pub bid_depth_quote: u64,
+    /// Committed liquidity (quote value) above the reference, within the window.
     pub ask_depth_quote: u64,
+    /// Informational: reference price vs the DAMM v2 (graduation) pool price.
     pub ref_deviation_bps: u16,
     pub active_id: i32,
+    pub anchor_bin: i32,
+}
+
+/// The mandate's reference price: a DLMM bin that follows the pair's oracle TWAP at a
+/// bounded speed. See `anchor.rs`.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, Default, PartialEq, Eq, InitSpace)]
+pub struct Anchor {
+    /// Reference bin; its DLMM price is the mandate's reference price.
+    pub bin: i32,
+    /// Latest TWAP bin the reference is moving toward.
+    pub target: i32,
+    /// Accrual clock for the speed limit.
+    pub ts: i64,
+    /// Oracle samples recorded before this time may include misattributed time.
+    pub taint_ts: i64,
+    /// TWAP window start (a DLMM oracle sample).
+    pub start_cum: i128,
+    pub start_ts: i64,
+    /// Candidate for the next window start.
+    pub next_cum: i128,
+    pub next_ts: i64,
 }
 
 #[account]
@@ -70,6 +98,8 @@ pub struct Mandate {
     pub base_mint: Pubkey,
     pub quote_mint: Pubkey,
     pub lb_pair: Pubkey,
+    /// The DLMM pair's oracle account (source of the TWAP).
+    pub oracle: Pubkey,
     pub reference_pool: Pubkey,
     pub score_log: Pubkey,
     pub base_vault: Pubkey,
@@ -86,9 +116,12 @@ pub struct Mandate {
     /// Who paid rent for the position (refunded on close).
     pub position_rent_payer: Pubkey,
     /// Last time the maker added liquidity; removals are blocked for
-    /// `min_snapshot_interval_secs` afterwards so liquidity cannot be added just for a
-    /// snapshot and pulled right after (snapshot sandwiching).
+    /// `liquidity_lock_secs` afterwards so liquidity cannot be added just for a
+    /// snapshot and pulled right after.
     pub last_liquidity_add_ts: i64,
+
+    /// Reference price state.
+    pub anchor: Anchor,
 
     pub created_at: i64,
     pub start_ts: i64,

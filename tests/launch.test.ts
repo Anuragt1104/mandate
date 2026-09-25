@@ -214,8 +214,9 @@ describe("launch: DBC → DAMM v2 → Mandate (mainnet Meteora binaries)", () =>
       minDepthQuote: new BN(500_000_000),
       depthWindowBps: 200,
       bandBps: 500,
-      maxRefDeviationBps: 150,
-      minSnapshotIntervalSecs: 30,
+      anchorTwapSecs: 300,
+      anchorSpeedBpsPerMin: 100,
+      liquidityLockSecs: 30,
       maxConsecutiveFailures: 3,
       slashBps: 10_000,
     };
@@ -261,6 +262,7 @@ describe("launch: DBC → DAMM v2 → Mandate (mainnet Meteora binaries)", () =>
         maxBinId: lb.activeId + 10,
       }),
     ]);
+    warp(svm, 61); // past the setup grace period
     send(svm, cranker, [await client.snapshot({ cranker: cranker.publicKey, mandate, m: m() })]);
     const last = m().last;
     expect(last.ok, JSON.stringify(last)).to.eq(true);

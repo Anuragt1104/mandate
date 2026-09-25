@@ -35,8 +35,9 @@ const TERMS: MandateTerms = {
   minDepthQuote: USDC(500),
   depthWindowBps: 200,
   bandBps: 500,
-  maxRefDeviationBps: 100,
-  minSnapshotIntervalSecs: 10,
+  anchorTwapSecs: 300,
+  anchorSpeedBpsPerMin: 100,
+  liquidityLockSecs: 10,
   maxConsecutiveFailures: 3,
   slashBps: 5_000,
 };
@@ -178,7 +179,13 @@ describe("mandate (LiteSVM + mainnet Meteora DLMM)", () => {
     expect(tokenBalance(svm, pair.reserveX) > 0n).to.eq(true);
   });
 
+  it("snapshots during the setup grace period are ignored", async () => {
+    send(svm, cranker, [await client.snapshot({ cranker: cranker.publicKey, mandate, m: m() })]);
+    expect(m().curSnapshots).to.eq(0);
+  });
+
   it("anyone can snapshot; a well-quoted book passes", async () => {
+    warp(svm, 60);
     send(svm, cranker, [await client.snapshot({ cranker: cranker.publicKey, mandate, m: m() })]);
     const s = m();
     expect(s.last.ok, JSON.stringify(s.last)).to.eq(true);
@@ -188,16 +195,56 @@ describe("mandate (LiteSVM + mainnet Meteora DLMM)", () => {
     expect(s.curSnapshots).to.eq(1);
   });
 
-  it("rate-limits snapshots", async () => {
-    warp(svm, 2);
-    const logs = sendExpectFail(svm, cranker, [await client.snapshot({ cranker: cranker.publicKey, mandate, m: m() })]);
-    expect(logs.join("\n")).to.contain("SnapshotTooSoon");
+  it("snapshots are not rate-limited, so nobody can crowd out other observers", async () => {
+    send(svm, trader, [await client.snapshot({ cranker: trader.publicKey, mandate, m: m() })]);
+    expect(m().curSnapshots).to.eq(2);
+  });
+
+  it("trading against the position right before a snapshot cannot fail a compliant maker", async () => {
+    // Buy most of the asks, snapshot, sell back: the old spot-book measurement failed here.
+    const quoteBefore = tokenBalance(svm, ata(quote, trader.publicKey));
+    const baseBefore = tokenBalance(svm, ata(base, trader.publicKey));
+    dlmmSwap(svm, trader, pair, 9_000_000_000n, false, [-1, 0]);
+    expect(readActiveId(svm, pair.lbPair)).to.be.gte(6);
+    send(svm, cranker, [await client.snapshot({ cranker: cranker.publicKey, mandate, m: m() })]);
+    expect(m().last.ok, JSON.stringify(m().last)).to.eq(true);
+    dlmmSwap(svm, trader, pair, tokenBalance(svm, ata(base, trader.publicKey)) - baseBefore, true, [-1, 0]);
+    expect(quoteBefore > tokenBalance(svm, ata(quote, trader.publicKey)), "the round trip costs fees").to.eq(true);
+    expect(m().curFailedSnapshots).to.eq(0);
   });
 
   it("traders can trade against the mandated liquidity", async () => {
     const before = readActiveId(svm, pair.lbPair);
     dlmmSwap(svm, trader, pair, 3_000_000_000n, false, [-1, 0]); // buy base with 3,000 quote
-    expect(readActiveId(svm, pair.lbPair)).to.be.gte(before);
+    expect(readActiveId(svm, pair.lbPair)).to.be.gte(before + 2);
+  });
+
+  it("the vault cannot bid above the reference price", async () => {
+    // The active bin is now above the reference (bin 0). DLMM would put quote in every
+    // bin up to the active one, so the vault would be buying above the reference.
+    const s = m();
+    expect(s.anchor.bin).to.eq(0);
+    const ix = await client.addLiquidity({
+      authority: maker.publicKey, mandate, m: s, pair: lb(), amountBase: new BN(0), amountQuote: USDC(1_000), minBinId: -5, maxBinId: 8,
+    });
+    expect(sendExpectFail(svm, maker, [ix]).join("\n")).to.contain("QuoteAboveReference");
+    // Bids at or below the reference are fine.
+    send(svm, maker, [
+      await client.addLiquidity({ authority: maker.publicKey, mandate, m: s, pair: lb(), amountBase: new BN(0), amountQuote: USDC(1_000), minBinId: -5, maxBinId: 0 }),
+    ]);
+  });
+
+  it("the vault cannot offer below the reference price", async () => {
+    // Push the active bin below the reference.
+    for (let i = 0; i < 20 && readActiveId(svm, pair.lbPair) >= -1; i++) dlmmSwap(svm, trader, pair, 500_000_000n, true, [0, -1]);
+    expect(readActiveId(svm, pair.lbPair)).to.be.lt(-1);
+    warp(svm, 11);
+    const ix = await client.addLiquidity({
+      authority: maker.publicKey, mandate, m: m(), pair: lb(), amountBase: USDC(1_000), amountQuote: new BN(0), minBinId: -8, maxBinId: 5,
+    });
+    expect(sendExpectFail(svm, maker, [ix]).join("\n")).to.contain("BaseBelowReference");
+    // Restore the price for the next steps.
+    for (let i = 0; i < 20 && readActiveId(svm, pair.lbPair) < 0; i++) dlmmSwap(svm, trader, pair, 500_000_000n, false, [-1, 0]);
   });
 
   it("a compliant period pays the maker", async () => {

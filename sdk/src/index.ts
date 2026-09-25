@@ -35,8 +35,9 @@ export interface MandateTerms {
   minDepthQuote: BN;
   depthWindowBps: number;
   bandBps: number;
-  maxRefDeviationBps: number;
-  minSnapshotIntervalSecs: number;
+  anchorTwapSecs: number;
+  anchorSpeedBpsPerMin: number;
+  liquidityLockSecs: number;
   maxConsecutiveFailures: number;
   slashBps: number;
 }
@@ -82,6 +83,7 @@ export const pda = {
     )[0],
   binArray: (lbPair: PublicKey, index: number) =>
     PublicKey.findProgramAddressSync([Buffer.from("bin_array"), lbPair.toBuffer(), i64le(index)], DLMM_PROGRAM_ID)[0],
+  dlmmOracle: (lbPair: PublicKey) => PublicKey.findProgramAddressSync([Buffer.from("oracle"), lbPair.toBuffer()], DLMM_PROGRAM_ID)[0],
 };
 
 export function binArrayIndex(binId: number): number {
@@ -176,6 +178,96 @@ export function decodeBinArray(data: Buffer | Uint8Array): { index: number; bins
   return { index: Number(d.readBigInt64LE(8)), bins };
 }
 
+// ---------------------------------------------------------------------------
+// Reference price ("anchor"): mirror of programs/mandate/src/anchor.rs
+// ---------------------------------------------------------------------------
+
+export interface OracleSample {
+  cumulative: bigint;
+  ts: number;
+}
+
+/** Latest observation of a DLMM oracle account, or null before the first swap. */
+export function decodeOracleLatest(data: Buffer | Uint8Array): OracleSample | null {
+  const d = Buffer.from(data);
+  const idx = Number(d.readBigUInt64LE(8));
+  if (d.readBigUInt64LE(16) === 0n) return null;
+  const o = 32 + idx * 32;
+  return { cumulative: (d.readBigInt64LE(o + 8) << 64n) + d.readBigUInt64LE(o), ts: Number(d.readBigInt64LE(o + 24)) };
+}
+
+export interface AnchorState {
+  bin: number;
+  target: number;
+  ts: number;
+  taintTs: number;
+  startCum: bigint;
+  startTs: number;
+  nextCum: bigint;
+  nextTs: number;
+}
+
+export function anchorState(m: any): AnchorState {
+  const a = m.anchor;
+  return {
+    bin: a.bin,
+    target: a.target,
+    ts: Number(a.ts),
+    taintTs: Number(a.taintTs),
+    startCum: BigInt(a.startCum.toString()),
+    startTs: Number(a.startTs),
+    nextCum: BigInt(a.nextCum.toString()),
+    nextTs: Number(a.nextTs),
+  };
+}
+
+const floorDiv = (a: bigint, b: bigint) => (a % b === 0n || a >= 0n ? a / b : a / b - 1n);
+
+/**
+ * Where the reference will be after the next refresh at `now` (what `add_liquidity` and
+ * `snapshot` will see). Pure; does not mutate `state`.
+ */
+export function projectAnchor(state: AnchorState, sample: OracleSample | null, terms: MandateTerms, binStep: number, now: number): AnchorState {
+  const a = { ...state };
+  const twap = observe(a, sample, terms.anchorTwapSecs);
+  if (twap !== null) step(a, twap, now, terms.anchorSpeedBpsPerMin, binStep);
+  return a;
+}
+
+function observe(a: AnchorState, s: OracleSample | null, window: number): number | null {
+  if (!s || s.ts <= 0) return null;
+  if (a.startTs < a.taintTs) (a.startTs = 0), (a.startCum = 0n);
+  if (a.nextTs < a.taintTs) (a.nextTs = 0), (a.nextCum = 0n);
+  if (s.ts < a.taintTs) return null;
+  if (a.nextTs === 0) (a.nextTs = s.ts), (a.nextCum = s.cumulative);
+  if (a.startTs === 0) (a.startTs = a.nextTs), (a.startCum = a.nextCum);
+  if (s.ts - a.nextTs >= window) {
+    a.startTs = a.nextTs;
+    a.startCum = a.nextCum;
+    a.nextTs = s.ts;
+    a.nextCum = s.cumulative;
+  }
+  const span = s.ts - a.startTs;
+  if (span < window || span <= 0) return null;
+  return Number(floorDiv(s.cumulative - a.startCum, BigInt(span)));
+}
+
+function step(a: AnchorState, target: number, now: number, speed: number, binStep: number) {
+  a.target = target;
+  if (target === a.bin) return void (a.ts = now);
+  if (now <= a.ts || speed === 0 || binStep === 0) return;
+  const secsPerBinNum = 60 * binStep;
+  const accrued = Math.floor(((now - a.ts) * speed) / secsPerBinNum);
+  if (accrued === 0) return;
+  const cap = Math.max(1, Math.floor(speed / binStep));
+  const gap = Math.abs(target - a.bin);
+  let mv: number;
+  if (accrued >= cap) (a.ts = now), (mv = Math.min(cap, gap));
+  else if (accrued >= gap) (a.ts = now), (mv = gap);
+  else (a.ts += Math.ceil((accrued * secsPerBinNum) / speed)), (mv = accrued);
+  a.bin += target > a.bin ? mv : -mv;
+}
+
 /** Human price (quote per base, UI units) of a DLMM bin. */
 export function binPrice(binId: number, binStep: number, baseDecimals: number, quoteDecimals: number): number {
   return Math.pow(1 + binStep / 10_000, binId) * Math.pow(10, baseDecimals - quoteDecimals);
@@ -222,6 +314,7 @@ export class MandateClient {
         baseMint: p.baseMint,
         quoteMint: p.quoteMint,
         lbPair: p.lbPair,
+        oracle: pda.dlmmOracle(p.lbPair),
         referencePool: p.referencePool,
         mandate,
         scoreLog: pda.scoreLog(mandate),
@@ -305,7 +398,7 @@ export class MandateClient {
       authority: p.authority,
       mandate: p.mandate,
       lbPair: p.m.lbPair,
-      referencePool: p.m.referencePool,
+      oracle: p.m.oracle,
       position: p.m.position,
       baseVault: p.m.baseVault,
       quoteVault: p.m.quoteVault,
@@ -359,6 +452,7 @@ export class MandateClient {
     pair: LbPairInfo;
     fromBinId?: number;
     toBinId?: number;
+    /** 0 with `claimFees` claims LP fees only. */
     bps?: number;
     claimFees?: boolean;
   }) {
@@ -395,6 +489,7 @@ export class MandateClient {
         scoreLog: p.m.scoreLog,
         makerProfile: pda.makerProfile(p.m.maker),
         lbPair: p.m.lbPair,
+        oracle: p.m.oracle,
         referencePool: p.m.referencePool,
         position: hasPosition ? p.m.position : SystemProgram.programId,
       })

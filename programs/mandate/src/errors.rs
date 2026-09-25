@@ -18,8 +18,12 @@ pub enum MandateError {
     ReferenceMintMismatch,
     #[msg("Liquidity range is outside the allowed band around the reference price")]
     OutsideBand,
-    #[msg("DLMM price deviates too far from the reference price")]
-    ReferenceDeviation,
+    #[msg("Quote may only be placed in bins at or below the reference price")]
+    QuoteAboveReference,
+    #[msg("Base may only be placed in bins at or above the reference price")]
+    BaseBelowReference,
+    #[msg("Oracle account does not match the DLMM pair")]
+    OracleMismatch,
     #[msg("Liquidity range is outside the mandate position")]
     RangeOutsidePosition,
     #[msg("Mandate already has an open position")]
@@ -30,20 +34,14 @@ pub enum MandateError {
     PositionMismatch,
     #[msg("A required bin array was not supplied")]
     MissingBinArray,
-    #[msg("Snapshot taken too soon after the previous one")]
-    SnapshotTooSoon,
     #[msg("Mandate is not active at this time")]
     NotActiveWindow,
-    #[msg("Period cannot be finalized yet")]
-    PeriodNotOver,
     #[msg("Position still holds liquidity")]
     PositionNotEmpty,
     #[msg("Math overflow")]
     MathOverflow,
     #[msg("Token account does not match the expected vault or owner")]
     InvalidTokenAccount,
-    #[msg("Only classic SPL Token mints are supported in v1")]
-    UnsupportedTokenProgram,
     #[msg("Launch record does not match this mandate")]
     LaunchMismatch,
     #[msg("Insufficient vault balance")]

@@ -1,14 +1,16 @@
 //! Mandate — enforceable designated-market-maker contracts on Solana.
 //!
 //! An issuer escrows token inventory and a fee budget. A market maker posts a bond and may
-//! deploy the inventory *only* into a Meteora DLMM position owned by the mandate PDA,
-//! within a band around a Meteora DAMM v2 reference price. Anyone can snapshot the book;
+//! deploy the inventory *only* into a Meteora DLMM position owned by the mandate PDA, as
+//! bids at or below and asks at or above a manipulation-resistant reference price (the
+//! pair's oracle TWAP, speed-limited). Anyone can snapshot the committed liquidity;
 //! compliant periods pay the maker, repeated failures slash the bond.
 
 #![allow(unexpected_cfgs)]
 
 use anchor_lang::prelude::*;
 
+pub mod anchor;
 pub mod constants;
 pub mod errors;
 pub mod events;
@@ -76,6 +78,7 @@ pub mod mandate {
     }
 
     /// Withdraw liquidity back into the vaults (maker while active; anyone after).
+    /// `bps = 0` with `claim_fees` only claims LP fees.
     pub fn remove_liquidity<'info>(
         ctx: Context<'_, '_, 'info, 'info, ManageLiquidity<'info>>,
         from_bin_id: i32,

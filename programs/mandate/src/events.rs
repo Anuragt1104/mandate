@@ -51,6 +51,7 @@ pub struct SnapshotTaken {
     pub ask_depth_quote: u64,
     pub ref_deviation_bps: u16,
     pub active_id: i32,
+    pub anchor_bin: i32,
     pub cranker: Pubkey,
 }
 

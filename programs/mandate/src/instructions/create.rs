@@ -13,8 +13,9 @@ pub fn validate_terms(t: &MandateTerms) -> Result<()> {
     require!(t.max_spread_bps > 0, MandateError::InvalidParams);
     require!(t.depth_window_bps > 0 && t.depth_window_bps <= 5_000, MandateError::InvalidParams);
     require!(t.band_bps > 0 && t.band_bps <= 5_000, MandateError::InvalidParams);
-    require!(t.max_ref_deviation_bps > 0 && t.max_ref_deviation_bps <= 5_000, MandateError::InvalidParams);
-    require!(t.min_snapshot_interval_secs <= t.period_secs, MandateError::InvalidParams);
+    require!(t.anchor_twap_secs >= MIN_TWAP_SECS && t.anchor_twap_secs <= MAX_TWAP_SECS, MandateError::InvalidParams);
+    require!(t.anchor_speed_bps_per_min > 0, MandateError::InvalidParams);
+    require!(t.liquidity_lock_secs <= t.period_secs, MandateError::InvalidParams);
     require!(t.max_consecutive_failures >= 1, MandateError::InvalidParams);
     require!(t.slash_bps <= MAX_BPS, MandateError::InvalidParams);
     Ok(())
@@ -31,6 +32,8 @@ pub struct CreateMandate<'info> {
 
     /// CHECK: validated as a DLMM LbPair with token_x = base, token_y = quote.
     pub lb_pair: UncheckedAccount<'info>,
+    /// CHECK: must be the pair's oracle; validated when read.
+    pub oracle: UncheckedAccount<'info>,
     /// CHECK: validated as a DAMM v2 pool over the same mints.
     pub reference_pool: UncheckedAccount<'info>,
 
@@ -95,6 +98,8 @@ pub fn create_mandate(ctx: Context<CreateMandate>, id: u64, args: CreateMandateA
         pair.token_x_mint == base_key && pair.token_y_mint == quote_key,
         MandateError::PairMintMismatch
     );
+    require_keys_eq!(pair.oracle, ctx.accounts.oracle.key(), MandateError::OracleMismatch);
+    let sample = dlmm::read_oracle_latest(&ctx.accounts.oracle)?;
     let pool = damm_v2::read_pool(&ctx.accounts.reference_pool)?;
     damm_v2::reference_price(&pool, &base_key, &quote_key)?;
 
@@ -108,6 +113,7 @@ pub fn create_mandate(ctx: Context<CreateMandate>, id: u64, args: CreateMandateA
     m.base_mint = base_key;
     m.quote_mint = quote_key;
     m.lb_pair = ctx.accounts.lb_pair.key();
+    m.oracle = ctx.accounts.oracle.key();
     m.reference_pool = ctx.accounts.reference_pool.key();
     m.score_log = ctx.accounts.score_log.key();
     m.base_vault = ctx.accounts.base_vault.key();
@@ -118,6 +124,8 @@ pub fn create_mandate(ctx: Context<CreateMandate>, id: u64, args: CreateMandateA
     m.status = MandateStatus::Open;
     m.position = Pubkey::default();
     m.created_at = now;
+    m.anchor = Anchor::new(pair.active_id, now);
+    m.anchor.observe(sample, args.terms.anchor_twap_secs);
     m.reset_period_accumulators();
 
     {

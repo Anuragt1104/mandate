@@ -18,6 +18,11 @@ const LB_PAIR_LEN: usize = 904;
 const POSITION_V2_DISC: [u8; 8] = [117, 176, 212, 199, 245, 180, 133, 182];
 const POSITION_V2_LEN: usize = 8120;
 const BIN_ARRAY_DISC: [u8; 8] = [92, 142, 92, 220, 5, 148, 70, 181];
+const ORACLE_DISC: [u8; 8] = [139, 194, 131, 179, 140, 179, 229, 244];
+/// Oracle header: discriminator + idx + active_size + length.
+const ORACLE_HEADER: usize = 32;
+/// Observation: cumulative_active_bin_id (i128), created_at (i64), last_updated_at (i64).
+const OBSERVATION_SIZE: usize = 32;
 const BIN_ARRAY_LEN: usize = 10136;
 const BIN_SIZE: usize = 144;
 const BINS_OFFSET: usize = 56;
@@ -36,6 +41,9 @@ fn rd_u16(d: &[u8], o: usize) -> u16 {
 }
 fn rd_u64(d: &[u8], o: usize) -> u64 {
     u64::from_le_bytes(d[o..o + 8].try_into().unwrap())
+}
+fn rd_i128(d: &[u8], o: usize) -> i128 {
+    i128::from_le_bytes(d[o..o + 16].try_into().unwrap())
 }
 fn rd_i64(d: &[u8], o: usize) -> i64 {
     i64::from_le_bytes(d[o..o + 8].try_into().unwrap())
@@ -63,6 +71,7 @@ pub struct LbPairView {
     pub token_y_mint: Pubkey,
     pub reserve_x: Pubkey,
     pub reserve_y: Pubkey,
+    pub oracle: Pubkey,
 }
 
 pub fn read_lb_pair(ai: &AccountInfo) -> Result<LbPairView> {
@@ -76,7 +85,22 @@ pub fn read_lb_pair(ai: &AccountInfo) -> Result<LbPairView> {
         token_y_mint: rd_pk(&d, 120),
         reserve_x: rd_pk(&d, 152),
         reserve_y: rd_pk(&d, 184),
+        oracle: rd_pk(&d, 552),
     })
+}
+
+/// Latest observation of the pair's oracle, or None before the first swap.
+pub fn read_oracle_latest(ai: &AccountInfo) -> Result<Option<crate::anchor::OracleSample>> {
+    check(ai, &ORACLE_DISC, ORACLE_HEADER)?;
+    let d = ai.try_borrow_data()?;
+    let idx = rd_u64(&d, 8) as usize;
+    let active_size = rd_u64(&d, 16);
+    if active_size == 0 {
+        return Ok(None);
+    }
+    let o = ORACLE_HEADER + idx * OBSERVATION_SIZE;
+    require!(d.len() >= o + OBSERVATION_SIZE, MandateError::InvalidAccountData);
+    Ok(Some(crate::anchor::OracleSample { cumulative: rd_i128(&d, o), ts: rd_i64(&d, o + 24) }))
 }
 
 #[derive(Clone, Copy, Debug)]

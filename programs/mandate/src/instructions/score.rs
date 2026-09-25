@@ -1,13 +1,18 @@
-//! Permissionless scoring. Anyone may take a snapshot at any time; the maker cannot know
-//! when the issuer (or anyone else) will sample, so it must stay compliant continuously.
-//! A period passes only if it was observed at least once and every snapshot passed.
+//! Permissionless scoring. Anyone may take a snapshot at any time and as often as they
+//! like; the maker cannot know when the issuer (or anyone else) will sample, so it must
+//! keep its liquidity committed continuously. A period passes only if it was observed at
+//! least once and every snapshot passed. Snapshots measure committed liquidity (see
+//! `scoring.rs`), which trading against the position cannot change, so extra snapshots
+//! cannot be used to fail an honest maker.
 
 use anchor_lang::prelude::*;
 
 use crate::constants::*;
 use crate::errors::MandateError;
 use crate::events::{MakerSlashed, MandateExpired, PeriodFinalized, SnapshotTaken};
+use crate::anchor;
 use crate::external::{damm_v2, dlmm};
+use crate::math::{deviation_bps, price_from_bin_id};
 use crate::scoring::{measure, BinAmounts, MeasureError, MeasureInput};
 use crate::state::*;
 
@@ -98,7 +103,10 @@ pub struct Snapshot<'info> {
     /// CHECK: must be the mandate's DLMM pair.
     #[account(address = mandate.lb_pair)]
     pub lb_pair: UncheckedAccount<'info>,
-    /// CHECK: must be the mandate's reference pool.
+    /// CHECK: must be the pair's oracle (source of the reference TWAP).
+    #[account(address = mandate.oracle @ MandateError::OracleMismatch)]
+    pub oracle: UncheckedAccount<'info>,
+    /// CHECK: must be the mandate's reference pool (informational deviation only).
     #[account(address = mandate.reference_pool)]
     pub reference_pool: UncheckedAccount<'info>,
     /// CHECK: the mandate's DLMM position; ignored when no position is open.
@@ -124,16 +132,15 @@ pub fn snapshot<'info>(ctx: Context<'_, '_, 'info, 'info, Snapshot<'info>>) -> R
     if m.current_period < m.period_at(now).min(m.terms.duration_periods) {
         return Ok(());
     }
-    if m.snapshots_total > 0 {
-        require!(
-            now - m.last.ts >= m.terms.min_snapshot_interval_secs as i64,
-            MandateError::SnapshotTooSoon
-        );
-    }
-
     let pair = dlmm::read_lb_pair(&ctx.accounts.lb_pair)?;
+    let sample = dlmm::read_oracle_latest(&ctx.accounts.oracle)?;
+    anchor::refresh(m, sample, pair.bin_step, now);
+    if now < m.start_ts + SETUP_GRACE_SECS {
+        return Ok(());
+    }
     let pool = damm_v2::read_pool(&ctx.accounts.reference_pool)?;
-    let ref_price = damm_v2::reference_price(&pool, &m.base_mint, &m.quote_mint)?;
+    let damm_price = damm_v2::reference_price(&pool, &m.base_mint, &m.quote_mint)?;
+    let anchor_price = price_from_bin_id(m.anchor.bin, pair.bin_step).ok_or(MandateError::MathOverflow)?;
 
     // Position (optional).
     let (lower, upper, shares) = if m.position != Pubkey::default() {
@@ -153,21 +160,29 @@ pub fn snapshot<'info>(ctx: Context<'_, '_, 'info, 'info, Snapshot<'info>>) -> R
         arrays.push((v.index, v.bins));
     }
 
-    let measurement = measure(
+    let c = measure(
         MeasureInput {
-            active_id: pair.active_id,
+            anchor_bin: m.anchor.bin,
             bin_step: pair.bin_step,
-            reference_price_q64: ref_price,
             position: if m.position != Pubkey::default() { Some((lower, upper, &shares[..])) } else { None },
             bin_array: |idx| arrays.iter().find(|(i, _)| *i == idx).map(|(_, b)| &b[..]),
         },
         &m.terms,
-        now,
     )
     .map_err(|e| match e {
         MeasureError::MissingBinArray(_) => error!(MandateError::MissingBinArray),
         MeasureError::Math => error!(MandateError::MathOverflow),
     })?;
+    let measurement = Measurement {
+        ts: now,
+        ok: c.ok,
+        spread_bps: c.spread_bps,
+        bid_depth_quote: c.bid_depth_quote,
+        ask_depth_quote: c.ask_depth_quote,
+        ref_deviation_bps: deviation_bps(anchor_price, damm_price),
+        active_id: pair.active_id,
+        anchor_bin: m.anchor.bin,
+    };
 
     m.snapshots_total = m.snapshots_total.saturating_add(1);
     m.cur_snapshots = m.cur_snapshots.saturating_add(1);
@@ -188,6 +203,7 @@ pub fn snapshot<'info>(ctx: Context<'_, '_, 'info, 'info, Snapshot<'info>>) -> R
         ask_depth_quote: measurement.ask_depth_quote,
         ref_deviation_bps: measurement.ref_deviation_bps,
         active_id: measurement.active_id,
+        anchor_bin: measurement.anchor_bin,
         cranker: ctx.accounts.cranker.key(),
     });
     Ok(())

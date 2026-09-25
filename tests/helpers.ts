@@ -377,3 +377,24 @@ export function sendTx(svm: LiteSVM, tx: Transaction, signers: Keypair[]): Trans
   }
   return res;
 }
+
+/** DLMM `go_to_a_bin` (permissionless): moves the active bin across empty bins. */
+export function dlmmGoToBin(svm: LiteSVM, payer: Keypair, lbPair: PublicKey, binId: number, fromArray: number, toArray: number) {
+  const data = dlmmProgram().coder.instruction.encode("goToABin", { binId });
+  const keys = [
+    { pubkey: lbPair, isSigner: false, isWritable: true },
+    { pubkey: DLMM_PROGRAM_ID, isSigner: false, isWritable: false }, // bitmap extension: none
+    { pubkey: deriveBinArray(lbPair, fromArray), isSigner: false, isWritable: false },
+    { pubkey: deriveBinArray(lbPair, toArray), isSigner: false, isWritable: false },
+    { pubkey: DLMM_EVENT_AUTHORITY, isSigner: false, isWritable: false },
+    { pubkey: DLMM_PROGRAM_ID, isSigner: false, isWritable: false },
+  ];
+  send(svm, payer, [new TransactionInstruction({ programId: DLMM_PROGRAM_ID, keys, data })]);
+}
+
+/** Latest cumulative active-bin-seconds recorded by a DLMM oracle. */
+export function oracleCumulative(svm: LiteSVM, oracle: PublicKey): { cumulative: bigint; ts: number } {
+  const d = Buffer.from(svm.getAccount(oracle)!.data);
+  const o = 32 + Number(d.readBigUInt64LE(8)) * 32;
+  return { cumulative: (d.readBigInt64LE(o + 8) << 64n) + d.readBigUInt64LE(o), ts: Number(d.readBigInt64LE(o + 24)) };
+}

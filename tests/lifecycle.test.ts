@@ -6,6 +6,7 @@ import {
   ata,
   createDlmmPair,
   createMint,
+  dlmmSwap,
   fundedKeypair,
   initBinArrays,
   mandateProgram,
@@ -32,8 +33,9 @@ const TERMS: MandateTerms = {
   minDepthQuote: U(100),
   depthWindowBps: 200,
   bandBps: 500,
-  maxRefDeviationBps: 100,
-  minSnapshotIntervalSecs: 30,
+  anchorTwapSecs: 300,
+  anchorSpeedBpsPerMin: 100,
+  liquidityLockSecs: 30,
   maxConsecutiveFailures: 2,
   slashBps: 10_000,
 };
@@ -147,6 +149,22 @@ describe("mandate lifecycle", () => {
     expect(logs.join("\n")).to.contain("LiquidityCooldown");
     warp(svm, 31);
     send(svm, maker, [await client.removeLiquidity({ authority: maker.publicKey, mandate: key, m: load(key), pair: lb(), bps: 1_000 })]);
+  });
+
+  it("a position with unclaimed LP fees can still be unwound (claim-only step)", async () => {
+    const key = await newMandate(15);
+    await acceptAndQuote(key);
+    const trader = fundedKeypair(svm);
+    mintTo(svm, mintAuth, quote, trader.publicKey, 1_000n * 1_000_000n);
+    dlmmSwap(svm, trader, pair, 200_000_000n, false, [0, 1]); // generates LP fees
+    warp(svm, 31);
+    send(svm, maker, [await client.removeLiquidity({ authority: maker.publicKey, mandate: key, m: load(key), pair: lb(), claimFees: false })]);
+    const logs = sendExpectFail(svm, maker, [await client.closePosition({ authority: maker.publicKey, mandate: key, m: load(key) })]);
+    expect(logs.join("\n")).to.contain("NonEmptyPosition");
+    const vaultQuote = tokenBalance(svm, load(key).quoteVault);
+    send(svm, maker, [await client.removeLiquidity({ authority: maker.publicKey, mandate: key, m: load(key), pair: lb(), bps: 0, claimFees: true })]);
+    expect(tokenBalance(svm, load(key).quoteVault) > vaultQuote, "fees land in the vault").to.eq(true);
+    send(svm, maker, [await client.closePosition({ authority: maker.publicKey, mandate: key, m: load(key) })]);
   });
 
   it("a fully compliant term expires normally; bond and fees go to the maker", async () => {

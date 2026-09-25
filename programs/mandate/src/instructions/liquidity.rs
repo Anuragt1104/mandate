@@ -1,5 +1,7 @@
 //! The restricted vault: inventory can only move into (and back out of) a DLMM position
-//! owned by the mandate PDA, and only within the band around the reference price.
+//! owned by the mandate PDA, within the band around the reference price, as bids at or
+//! below it and asks at or above it. A DLMM bin trades at one fixed price, so the vault
+//! never buys above or sells below the reference (within one bin) at placement time.
 
 use anchor_lang::prelude::*;
 use anchor_spl::token::{Mint, Token, TokenAccount};
@@ -7,9 +9,9 @@ use anchor_spl::token::{Mint, Token, TokenAccount};
 use crate::constants::*;
 use crate::errors::MandateError;
 use crate::events::{LiquidityDeployed, LiquidityWithdrawn};
-use crate::external::damm_v2;
+use crate::anchor;
 use crate::external::dlmm::{self, DlmmLiquidityAccounts, LiquidityParameterByStrategy, StrategyParameters, DLMM_EVENT_AUTHORITY};
-use crate::math::{deviation_bps, price_from_bin_id, scale_bps};
+use crate::math::{bin_array_index, price_from_bin_id, scale_bps};
 use crate::mandate_signer_seeds;
 use crate::state::*;
 
@@ -99,9 +101,9 @@ pub struct ManageLiquidity<'info> {
     /// CHECK: must be the mandate's DLMM pair.
     #[account(mut, address = mandate.lb_pair)]
     pub lb_pair: UncheckedAccount<'info>,
-    /// CHECK: must be the mandate's reference pool.
-    #[account(address = mandate.reference_pool)]
-    pub reference_pool: UncheckedAccount<'info>,
+    /// CHECK: must be the pair's oracle (source of the reference TWAP).
+    #[account(address = mandate.oracle @ MandateError::OracleMismatch)]
+    pub oracle: UncheckedAccount<'info>,
     /// CHECK: must be the mandate's open DLMM position.
     #[account(mut, address = mandate.position @ MandateError::NoPosition)]
     pub position: UncheckedAccount<'info>,
@@ -206,11 +208,14 @@ pub struct AddLiquidityArgs {
 }
 
 pub fn add_liquidity<'info>(ctx: Context<'_, '_, 'info, 'info, ManageLiquidity<'info>>, args: AddLiquidityArgs) -> Result<()> {
+    require_active_maker(&ctx.accounts.mandate, &ctx.accounts.authority.key())?;
+    let pair = check_pair_accounts(&ctx.accounts)?;
+    let now = Clock::get()?.unix_timestamp;
+    let sample = dlmm::read_oracle_latest(&ctx.accounts.oracle)?;
+    anchor::refresh(&mut ctx.accounts.mandate, sample, pair.bin_step, now);
+
     let a = &ctx.accounts;
     let m = &a.mandate;
-    require_active_maker(m, &a.authority.key())?;
-    let pair = check_pair_accounts(a)?;
-
     require!(args.strategy_type <= 8, MandateError::InvalidParams);
     require!(args.min_bin_id <= args.max_bin_id, MandateError::InvalidParams);
     let pos_upper = m.position_lower_bin_id + m.position_width - 1;
@@ -223,14 +228,17 @@ pub fn add_liquidity<'info>(ctx: Context<'_, '_, 'info, 'info, ManageLiquidity<'
         MandateError::InsufficientVault
     );
 
-    // Reference-price guards.
-    let pool = damm_v2::read_pool(&a.reference_pool)?;
-    let ref_price = damm_v2::reference_price(&pool, &m.base_mint, &m.quote_mint)?;
-    let p_active = price_from_bin_id(pair.active_id, pair.bin_step).ok_or(MandateError::MathOverflow)?;
-    require!(
-        deviation_bps(p_active, ref_price) <= m.terms.max_ref_deviation_bps,
-        MandateError::ReferenceDeviation
-    );
+    // DLMM puts quote in bins at or below the active bin and base in bins at or above it.
+    // The vault may bid only at or below the reference and offer only at or above it
+    // (one bin of tolerance for the reference's rounding).
+    let reference = m.anchor.bin;
+    if args.amount_quote > 0 {
+        require!(args.max_bin_id.min(pair.active_id) <= reference + 1, MandateError::QuoteAboveReference);
+    }
+    if args.amount_base > 0 {
+        require!(args.min_bin_id.max(pair.active_id) >= reference, MandateError::BaseBelowReference);
+    }
+    let ref_price = price_from_bin_id(reference, pair.bin_step).ok_or(MandateError::MathOverflow)?;
     let lo = scale_bps(ref_price, m.terms.band_bps, false).ok_or(MandateError::MathOverflow)?;
     let hi = scale_bps(ref_price, m.terms.band_bps, true).ok_or(MandateError::MathOverflow)?;
     let p_min = price_from_bin_id(args.min_bin_id, pair.bin_step).ok_or(MandateError::MathOverflow)?;
@@ -258,7 +266,7 @@ pub fn add_liquidity<'info>(ctx: Context<'_, '_, 'info, 'info, ManageLiquidity<'
     )?;
 
     let mandate_key = m.key();
-    ctx.accounts.mandate.last_liquidity_add_ts = Clock::get()?.unix_timestamp;
+    ctx.accounts.mandate.last_liquidity_add_ts = now;
     emit!(LiquidityDeployed {
         mandate: mandate_key,
         amount_base: args.amount_base,
@@ -279,15 +287,17 @@ pub fn remove_liquidity<'info>(
     let a = &ctx.accounts;
     let m = &a.mandate;
     authorize_unwind(m, &a.authority.key())?;
-    check_pair_accounts(a)?;
-    if m.status == MandateStatus::Active {
-        let now = Clock::get()?.unix_timestamp;
+    let pair = check_pair_accounts(a)?;
+    let now = Clock::get()?.unix_timestamp;
+    let active = m.status == MandateStatus::Active;
+    if active {
         require!(
-            now - m.last_liquidity_add_ts >= m.terms.min_snapshot_interval_secs as i64,
+            now - m.last_liquidity_add_ts >= m.terms.liquidity_lock_secs as i64,
             MandateError::LiquidityCooldown
         );
     }
-    require!(bps > 0 && bps <= MAX_BPS && from_bin_id <= to_bin_id, MandateError::InvalidParams);
+    // bps = 0 claims fees only (DLMM will not close a position with unclaimed fees).
+    require!(bps <= MAX_BPS && from_bin_id <= to_bin_id && (bps > 0 || claim_fees), MandateError::InvalidParams);
 
     let owned = DlmmLiquidityAccountsOwned::from_ctx(a);
     mandate_signer_seeds!(m, id_bytes, bump, seeds);
@@ -295,10 +305,39 @@ pub fn remove_liquidity<'info>(
         let upper = m.position_lower_bin_id + m.position_width - 1;
         dlmm::claim_fee2(&owned.borrow(), ctx.remaining_accounts, m.position_lower_bin_id, upper, &[seeds])?;
     }
-    dlmm::remove_liquidity_by_range2(&owned.borrow(), ctx.remaining_accounts, from_bin_id, to_bin_id, bps, &[seeds])?;
+    if bps > 0 {
+        dlmm::remove_liquidity_by_range2(&owned.borrow(), ctx.remaining_accounts, from_bin_id, to_bin_id, bps, &[seeds])?;
+    }
 
-    emit!(LiquidityWithdrawn { mandate: m.key(), from_bin_id, to_bin_id, bps });
+    // An empty active bin lets anyone move the active bin with DLMM's `go_to_a_bin`
+    // without updating the oracle; the next swap would then credit that bin for all the
+    // time since the last swap. Stop the reference from using samples from before now.
+    let mandate_key = m.key();
+    if active && bps > 0 && from_bin_id <= pair.active_id && pair.active_id <= to_bin_id {
+        if active_bin_is_empty(ctx.remaining_accounts, &m.lb_pair, pair.active_id)? {
+            ctx.accounts.mandate.anchor.taint(now);
+        }
+    }
+
+    emit!(LiquidityWithdrawn { mandate: mandate_key, from_bin_id, to_bin_id, bps });
     Ok(())
+}
+
+/// Reads the active bin from the supplied bin arrays. A bin array that was not supplied
+/// is treated as empty (conservative: it taints).
+fn active_bin_is_empty(arrays: &[AccountInfo], lb_pair: &Pubkey, active_id: i32) -> Result<bool> {
+    let idx = bin_array_index(active_id);
+    for ai in arrays {
+        if *ai.owner != DLMM_PROGRAM_ID {
+            continue;
+        }
+        let Ok(v) = dlmm::read_bin_array(ai) else { continue };
+        if v.index == idx && v.lb_pair == *lb_pair {
+            let b = v.bins[(active_id as i64 - idx * BINS_PER_ARRAY as i64) as usize];
+            return Ok(b.amount_x == 0 && b.amount_y == 0);
+        }
+    }
+    Ok(true)
 }
 
 // ---------------------------------------------------------------------------

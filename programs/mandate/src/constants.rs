@@ -24,6 +24,14 @@ pub const MAX_POSITION_WIDTH: i32 = 70;
 pub const SCORE_LOG_LEN: usize = 168;
 
 pub const MIN_PERIOD_SECS: u32 = 60;
+/// Bounds on the TWAP window the reference price follows.
+pub const MIN_TWAP_SECS: u32 = 30;
+pub const MAX_TWAP_SECS: u32 = 86_400;
+/// The quoted spread is measured for an order of `min_depth_quote / SPREAD_SIZE_DIVISOR`,
+/// so dust placed next to the reference does not count as a tight quote.
+pub const SPREAD_SIZE_DIVISOR: u64 = 10;
+/// Snapshots in the first seconds after acceptance are ignored so the maker can deploy.
+pub const SETUP_GRACE_SECS: i64 = 60;
 /// Max periods finalized per instruction (bounds compute after long unobserved gaps).
 pub const MAX_FINALIZE_PER_CALL: u32 = 32;
 pub const MAX_BPS: u16 = 10_000;
