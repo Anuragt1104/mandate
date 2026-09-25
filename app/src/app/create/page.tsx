@@ -15,8 +15,8 @@ const DEFAULTS: Form = {
   baseMint: "", quoteMint: "", lbPair: "", referencePool: "", designatedMaker: "",
   baseDeposit: "0", quoteDeposit: "5000", feeBudget: "720",
   feePerPeriod: "1", periodMinutes: "60", durationPeriods: "168", bond: "250",
-  maxSpreadBps: "100", minDepth: "500", depthWindowBps: "200", bandBps: "500", maxRefDeviationBps: "150",
-  minSnapshotIntervalSecs: "20", maxConsecutiveFailures: "3", slashPct: "50",
+  maxSpreadBps: "100", minDepth: "500", depthWindowBps: "200", bandBps: "500", twapMinutes: "5",
+  speedPctPerMin: "1", liquidityLockSecs: "30", maxConsecutiveFailures: "3", slashPct: "50",
 };
 
 function Field({ id, label, hint, form, set, mono = false }: { id: string; label: string; hint?: string; form: Form; set: (k: string, v: string) => void; mono?: boolean }) {
@@ -61,7 +61,8 @@ export default function CreateMandate() {
           terms: {
             feePerPeriod: Qn(form.feePerPeriod), periodSecs: Math.round(Number(form.periodMinutes) * 60), durationPeriods: Number(form.durationPeriods),
             bondAmount: Qn(form.bond), maxSpreadBps: Number(form.maxSpreadBps), minDepthQuote: Qn(form.minDepth), depthWindowBps: Number(form.depthWindowBps),
-            bandBps: Number(form.bandBps), maxRefDeviationBps: Number(form.maxRefDeviationBps), minSnapshotIntervalSecs: Number(form.minSnapshotIntervalSecs),
+            bandBps: Number(form.bandBps), anchorTwapSecs: Math.round(Number(form.twapMinutes) * 60),
+            anchorSpeedBpsPerMin: Math.round(Number(form.speedPctPerMin) * 100), liquidityLockSecs: Number(form.liquidityLockSecs),
             maxConsecutiveFailures: Number(form.maxConsecutiveFailures), slashBps: Math.round(Number(form.slashPct) * 100),
           },
           baseDeposit: B(form.baseDeposit), quoteDeposit: Qn(form.quoteDeposit), feeBudget: Qn(form.feeBudget),
@@ -80,7 +81,7 @@ export default function CreateMandate() {
         <h1>Hire a market maker on terms the chain enforces.</h1>
         <p className="lede">
           Fund the vault and fee budget, then set the terms. Any maker, or the one you name, can accept by posting a bond. Tokens can only
-          leave the vault as quotes on your DLMM pair, within the band you set around the graduated DAMM v2 price.
+          leave the vault as quotes on your DLMM pair: bids at or below the reference price, asks at or above it, within the band you set.
         </p>
       </section>
 
@@ -90,7 +91,7 @@ export default function CreateMandate() {
           <Field id="baseMint" label="Base token mint" {...f} mono />
           <Field id="quoteMint" label="Quote token mint" {...f} mono />
           <Field id="lbPair" label="Meteora DLMM pair" hint="Token X must be the base token." {...f} mono />
-          <Field id="referencePool" label="Reference pool (Meteora DAMM v2)" hint="Usually the pool the token graduated into." {...f} mono />
+          <Field id="referencePool" label="Graduated pool (Meteora DAMM v2)" hint="The pool the token graduated into. Shown next to the reference price." {...f} mono />
         </div>
       </section>
 
@@ -110,12 +111,13 @@ export default function CreateMandate() {
           <Field id="periodMinutes" label="Period length (minutes)" {...f} />
           <Field id="durationPeriods" label="Number of periods" {...f} />
           <Field id="bond" label="Maker bond" {...f} />
-          <Field id="maxSpreadBps" label="Max spread (bps)" {...f} />
-          <Field id="minDepth" label="Min depth each side (quote)" {...f} />
-          <Field id="depthWindowBps" label="Depth window (bps around price)" {...f} />
+          <Field id="maxSpreadBps" label="Max spread (bps)" hint="Measured at 10% of the depth target." {...f} />
+          <Field id="minDepth" label="Min liquidity each side (quote)" {...f} />
+          <Field id="depthWindowBps" label="Depth window (bps from reference)" {...f} />
           <Field id="bandBps" label="Allowed band around reference (bps)" {...f} />
-          <Field id="maxRefDeviationBps" label="Max deviation from reference (bps)" {...f} />
-          <Field id="minSnapshotIntervalSecs" label="Min seconds between checks" {...f} />
+          <Field id="twapMinutes" label="Reference TWAP window (minutes)" hint="The reference follows the DLMM pair's time-weighted price." {...f} />
+          <Field id="speedPctPerMin" label="Reference speed limit (% per minute)" hint="Lower is harder to manipulate; higher follows fast markets." {...f} />
+          <Field id="liquidityLockSecs" label="Liquidity lock (seconds)" hint="How long added liquidity must stay before it can be pulled." {...f} />
           <Field id="maxConsecutiveFailures" label="Failed periods before slashing" {...f} />
           <Field id="slashPct" label="Slash size (% of bond)" {...f} />
           <Field id="designatedMaker" label="Designated maker (optional)" hint="Leave empty to let any maker accept." {...f} mono />

@@ -8,7 +8,10 @@ import {
   MANDATE_PROGRAM_ID,
   MandateClient,
   decodeBinArray,
+  anchorState,
   decodeDammPool,
+  decodeOracleLatest,
+  projectAnchor,
   decodeLbPair,
   decodePosition,
   pda,
@@ -113,20 +116,28 @@ export interface BookBin {
   priceUi: number;
 }
 
-/** The mandate position's liquidity per bin, plus pair/reference context. */
+/**
+ * The mandate position's liquidity per bin, plus pair context: the reference bin the
+ * next check will use (projected from the DLMM oracle), and the graduated pool's price.
+ */
 export async function fetchBook(m: any) {
   const conn = connection();
-  const [pairInfo, refInfo] = await conn.getMultipleAccountsInfo([m.lbPair, m.referencePool]);
+  const [pairInfo, dammInfo, oracleInfo] = await conn.getMultipleAccountsInfo([m.lbPair, m.referencePool, m.oracle]);
   if (!pairInfo) return null;
   const pair = decodeLbPair(pairInfo.data);
   const [bd, qd] = await Promise.all([mintDecimals(m.baseMint), mintDecimals(m.quoteMint)]);
   const toUiPrice = (atomic: number) => atomic * Math.pow(10, bd - qd);
-  let refUi = 0;
-  if (refInfo) {
-    const p = decodeDammPool(refInfo.data);
+  const binUi = (b: number) => toUiPrice(Math.pow(1 + pair.binStep / 10_000, b));
+  let dammUi = 0;
+  if (dammInfo) {
+    const p = decodeDammPool(dammInfo.data);
     const atomic = Number(p.sqrtPrice) ** 2 / 2 ** 128;
-    refUi = toUiPrice(p.tokenA.equals(m.baseMint) ? atomic : 1 / atomic);
+    dammUi = toUiPrice(p.tokenA.equals(m.baseMint) ? atomic : 1 / atomic);
   }
+  const sample = oracleInfo ? decodeOracleLatest(oracleInfo.data) : null;
+  const projected = projectAnchor(anchorState(m), sample, m.terms, pair.binStep, Math.floor(Date.now() / 1000));
+  const refBin = projected.bin;
+  const refUi = binUi(refBin);
   const bins: BookBin[] = [];
   const hasPos = !(m.position as PublicKey).equals(PublicKey.default);
   if (hasPos) {
@@ -150,12 +161,12 @@ export async function fetchBook(m: any) {
         if (bin.liquiditySupply === 0n) continue;
         const x = Number((bin.amountX * share) / bin.liquiditySupply) / 10 ** bd;
         const y = Number((bin.amountY * share) / bin.liquiditySupply) / 10 ** qd;
-        bins.push({ binId: b, base: x, quote: y, priceUi: toUiPrice(Math.pow(1 + pair.binStep / 10_000, b)) });
+        bins.push({ binId: b, base: x, quote: y, priceUi: binUi(b) });
       }
     }
   }
-  const activeUi = toUiPrice(Math.pow(1 + pair.binStep / 10_000, pair.activeId));
-  return { pair, bins, refUi, activeUi, baseDecimals: bd, quoteDecimals: qd };
+  const activeUi = binUi(pair.activeId);
+  return { pair, bins, refBin, refUi, targetBin: projected.target, dammUi, activeUi, baseDecimals: bd, quoteDecimals: qd };
 }
 
 export { pda };

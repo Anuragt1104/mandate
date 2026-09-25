@@ -5,19 +5,22 @@ import type { BookBin } from "@/lib/chain";
 import { fmt, fmtPrice } from "./ui";
 
 /**
- * The mandate's own quotes, drawn like an order-book ladder: asks (base, valued in
- * quote) above the active bin, bids (quote) below. The band inside which the vault may
- * quote is shaded; the reference (graduated DAMM v2) price is marked.
+ * The mandate's own quotes, drawn like an order-book ladder, one row per DLMM bin. Each
+ * bin holds base (an ask) or quote (a bid) depending on where the price has been. The
+ * band inside which the vault may quote is shaded, and the reference price is ruled:
+ * the vault may only bid at or below it and offer above it.
  */
 export function DepthLadder({
   bins,
   activeBinId,
+  refBin,
   refUi,
   bandBps,
   quoteSymbol = "quote",
 }: {
   bins: BookBin[];
   activeBinId: number;
+  refBin: number;
   refUi: number;
   bandBps: number;
   quoteSymbol?: string;
@@ -62,12 +65,28 @@ export function DepthLadder({
               </g>
             );
           })}
+          {(() => {
+            // Rule between the lowest ask-side bin (refBin + 1) and the reference bin.
+            const i = rows.findIndex((r) => r.binId <= refBin);
+            if (i < 0) return null;
+            const y = 4 + i * rowH;
+            return (
+              <g>
+                <line x1={0} x2={width} y1={y} y2={y} stroke="var(--brass)" strokeWidth={1.5} strokeDasharray="4 3" />
+                <rect x={width - 118} y={y - 7} width={116} height={14} rx={3} fill="var(--panel)" stroke="var(--brass)" strokeWidth={1} />
+                <text x={width - 60} y={y + 3.5} textAnchor="middle" fontSize={9.5} fontFamily="var(--font-display)" fontWeight={600} fill="var(--brass)">
+                  reference {fmtPrice(refUi)}
+                </text>
+              </g>
+            );
+          })()}
         </svg>
       </div>
       <div className="tape-legend" style={{ marginTop: 8 }}>
         <span><i style={{ background: "var(--ask)" }} />Asks (base, valued in {quoteSymbol})</span>
         <span><i style={{ background: "var(--bid)" }} />Bids ({quoteSymbol})</span>
         <span><i style={{ background: "var(--band)", border: "1px solid var(--brass)" }} />Allowed band ±{bandBps / 100}% of reference</span>
+        <span><i style={{ borderTop: "1.5px dashed var(--brass)", height: 0 }} />Reference price</span>
         <span><i style={{ border: "1.5px solid var(--brass)" }} />Active bin</span>
       </div>
       {hover && (

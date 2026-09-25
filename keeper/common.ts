@@ -12,7 +12,7 @@ import {
   TransactionInstruction,
   sendAndConfirmTransaction,
 } from "@solana/web3.js";
-import { MANDATE_PROGRAM_ID, MandateClient, decodeDammPool, decodeLbPair } from "../sdk/src";
+import { MANDATE_PROGRAM_ID, MandateClient, anchorState, decodeDammPool, decodeLbPair, decodeOracleLatest, projectAnchor } from "../sdk/src";
 
 export const RPC_URL = process.env.RPC_URL ?? "http://127.0.0.1:8899";
 
@@ -64,6 +64,13 @@ export async function fetchReferencePrice(connection: Connection, pool: PublicKe
   const p = decodeDammPool(info.data);
   const price = Number(p.sqrtPrice) ** 2 / 2 ** 128;
   return p.tokenA.equals(baseMint) ? price : 1 / price;
+}
+
+/** The reference bin the next `add_liquidity` / `snapshot` will see. */
+export async function fetchAnchor(connection: Connection, m: any, binStep: number, now: number): Promise<number> {
+  const info = await connection.getAccountInfo(m.oracle);
+  const sample = info ? decodeOracleLatest(info.data) : null;
+  return projectAnchor(anchorState(m), sample, m.terms, binStep, now).bin;
 }
 
 export async function chainTime(connection: Connection): Promise<number> {

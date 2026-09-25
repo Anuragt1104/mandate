@@ -66,14 +66,15 @@ a { color: inherit; }
 
 /* Header */
 .topbar { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--ground) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--rule); }
-.topbar-inner { max-width: 1180px; margin: 0 auto; padding: 12px 20px; display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+.topbar-inner { max-width: 1180px; margin: 0 auto; padding: 12px 20px; display: flex; align-items: center; gap: 12px 16px; flex-wrap: wrap; }
 .wordmark { font: 700 20px/1 var(--font-display); letter-spacing: 0.06em; text-transform: uppercase; text-decoration: none; display: flex; align-items: center; gap: 10px; }
 .wordmark .plaque { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 5px; background: var(--brass); color: var(--panel); font-size: 15px; }
 .nav { display: flex; gap: 4px; flex-wrap: wrap; }
-.nav a { text-decoration: none; padding: 6px 10px; border-radius: 6px; color: var(--ink-2); font-weight: 500; font-size: 14px; }
+.nav a { text-decoration: none; padding: 6px 8px; border-radius: 6px; color: var(--ink-2); font-weight: 500; font-size: 14px; }
 .nav a[aria-current="page"], .nav a:hover { background: var(--panel); color: var(--ink); }
 .spacer { flex: 1; }
 .cluster { font: 500 12px var(--font-mono); color: var(--muted); padding: 4px 8px; border: 1px solid var(--rule); border-radius: 999px; }
+@media (max-width: 1100px) { .cluster { display: none; } }
 
 /* Type */
 .eyebrow { font: 600 12px var(--font-display); letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass); }

@@ -35,9 +35,7 @@ async function main() {
             const period = m.terms.periodSecs as number;
             const periodNow = Math.floor((now - m.startTs.toNumber()) / period);
             if (!nextSample.has(key)) nextSample.set(key, now + Math.random() * (period / SAMPLES_PER_PERIOD));
-            const due = now >= nextSample.get(key)!;
-            const spaced = m.snapshotsTotal === 0 || now - m.last.ts.toNumber() >= m.terms.minSnapshotIntervalSecs;
-            if (due && spaced) {
+            if (now >= nextSample.get(key)!) {
               await sendIxs(connection, cranker, [await client.snapshot({ cranker: cranker.publicKey, mandate: pubkey, m })]);
               nextSample.set(key, now + (Math.random() * 2 * period) / SAMPLES_PER_PERIOD);
               log("snapshot", `${key.slice(0, 8)} period=${periodNow}`);

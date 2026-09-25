@@ -10,7 +10,7 @@ import { usePoll, useNow } from "@/lib/hooks";
 import { useMandateActions } from "@/lib/actions";
 import { DepthLadder } from "@/components/DepthLadder";
 import { StatusChip, Tape, TapeLegend, duration, fmt, fmtPrice } from "@/components/ui";
-import { StrategyType, binArrayIndex, binIdForAtomicPrice, dlmmInitBinArrayIx, pda, statusName } from "../../../../../sdk/src";
+import { StrategyType, binArrayIndex, dlmmInitBinArrayIx, statusName } from "../../../../../sdk/src";
 
 const Q = 1e6; // quote-token decimals used for display of terms
 
@@ -30,7 +30,7 @@ function Check({ label, value, target, pass }: { label: string; value: string; t
     <div className={`check ${pass === null ? "" : pass ? "pass" : "miss"}`}>
       <div className="label"><span>{label}</span><span className="mark">{pass === null ? "" : pass ? "✓" : "✕"}</span></div>
       <div className="value">{value}</div>
-      <div className="hint">target {target}</div>
+      <div className="hint">{target}</div>
     </div>
   );
 }
@@ -58,7 +58,6 @@ export default function MandatePage({ params }: { params: Promise<{ id: string }
   const periodEnd = m.startTs.toNumber() + (m.currentPeriod + 1) * t.periodSecs;
   const last = m.last;
   const checked = m.snapshotsTotal > 0;
-  const refDevOk = last.refDeviationBps <= t.maxRefDeviationBps;
   const quoteUi = (v: any) => Number(v.toString()) / 10 ** qd;
   const after = async () => setTimeout(reload, 400);
 
@@ -72,33 +71,41 @@ export default function MandatePage({ params }: { params: Promise<{ id: string }
     ], { done: "Mandate accepted. Your bond is posted." }).then(after);
   const openPosition = () =>
     run("Open position", async (c, me) => {
-      const active = book!.pair.activeId;
-      const lower = active - 35;
+      const lower = book!.refBin - 35;
       const ixs = [];
       for (let i = binArrayIndex(lower); i <= binArrayIndex(lower + 69); i++) ixs.push(dlmmInitBinArrayIx(m.lbPair, i, me));
       // Bin-array init fails if it already exists, so only include missing ones.
       const infos = await (await import("@/lib/chain")).connection().getMultipleAccountsInfo(ixs.map((ix) => ix.keys[1].pubkey));
       const missing = ixs.filter((_, i) => !infos[i]);
       return [...missing, await c.openPosition({ maker: me, mandate: key, m, lowerBinId: lower, width: 70 })];
-    }, { done: "Position opened, centred on the active bin." }).then(after);
+    }, { done: "Position opened, centred on the reference price." }).then(after);
+  // Bids go at or below the reference, asks at or above it (and DLMM puts quote at or
+  // below the active bin, base at or above it), so deploy each side separately.
   const deploy = () =>
     run("Deploy inventory", async (c, me) => {
       const pair = book!.pair;
-      const refAtomic = book!.refUi / Math.pow(10, bd - qd);
-      const bandLo = binIdForAtomicPrice(refAtomic * (1 - t.bandBps / 10_000), pair.binStep) + 1;
-      const bandHi = binIdForAtomicPrice(refAtomic * (1 + t.bandBps / 10_000), pair.binStep) - 1;
+      const ref = book!.refBin;
+      const bandBins = Math.floor(Math.log(1 + t.bandBps / 10_000) / Math.log(1 + pair.binStep / 10_000)) - 1;
       const lower = m.positionLowerBinId as number;
-      const minBin = Math.max(pair.activeId - halfWidth, bandLo, lower);
-      const maxBin = Math.min(pair.activeId + halfWidth, bandHi, lower + (m.positionWidth as number) - 1);
+      const upper = lower + (m.positionWidth as number) - 1;
+      const lo = Math.max(ref - Math.min(halfWidth, bandBins), lower);
+      const hi = Math.min(ref + Math.min(halfWidth, bandBins), upper);
       const f = BigInt(pct);
-      return [
-        await c.addLiquidity({
-          authority: me, mandate: key, m, pair,
-          amountBase: new BN(((balances[0] * f) / 100n).toString()),
-          amountQuote: new BN(((balances[1] * f) / 100n).toString()),
-          minBinId: minBin, maxBinId: maxBin, strategy: StrategyType.SpotImBalanced,
-        }),
-      ];
+      const ixs = [];
+      const bidMax = Math.min(ref + 1, pair.activeId, hi);
+      if (balances[1] > 0n && lo <= bidMax)
+        ixs.push(await c.addLiquidity({
+          authority: me, mandate: key, m, pair, amountBase: new BN(0), amountQuote: new BN(((balances[1] * f) / 100n).toString()),
+          minBinId: lo, maxBinId: bidMax, strategy: StrategyType.SpotImBalanced,
+        }));
+      const askMin = Math.max(ref, pair.activeId, lo);
+      if (balances[0] > 0n && askMin <= hi)
+        ixs.push(await c.addLiquidity({
+          authority: me, mandate: key, m, pair, amountBase: new BN(((balances[0] * f) / 100n).toString()), amountQuote: new BN(0),
+          minBinId: askMin, maxBinId: hi, strategy: StrategyType.SpotImBalanced,
+        }));
+      if (!ixs.length) throw new Error("Nothing to deploy: the vault is empty or no bins are allowed right now.");
+      return ixs;
     }, { done: "Inventory deployed into the DLMM position." }).then(after);
   const pull = (close: boolean) =>
     run(close ? "Unwind" : "Pull liquidity", async (c, me) => {
@@ -117,7 +124,6 @@ export default function MandatePage({ params }: { params: Promise<{ id: string }
   const cancel = () => run("Cancel", async (c) => [await c.cancel({ mandate: key, m })], { done: "Mandate cancelled. Funds returned." }).then(after);
 
   const earnedUnclaimed = quoteUi(m.feesEarned) - quoteUi(m.feesClaimed);
-  const cooldown = checked ? Math.max(0, last.ts.toNumber() + t.minSnapshotIntervalSecs - now) : 0;
 
   return (
     <div className="stack" style={{ paddingTop: 24 }}>
@@ -156,10 +162,10 @@ export default function MandatePage({ params }: { params: Promise<{ id: string }
               </span>
             </div>
             <div className="verdict">
-              <Check label="Spread" value={!checked ? "—" : last.spreadBps === 65535 ? "No quotes" : `${last.spreadBps} bps`} target={`≤ ${t.maxSpreadBps} bps`} pass={checked ? last.spreadBps <= t.maxSpreadBps : null} />
-              <Check label="Bid depth" value={checked ? fmt(quoteUi(last.bidDepthQuote)) : "—"} target={`≥ ${fmt(quoteUi(t.minDepthQuote))} within ±${t.depthWindowBps / 100}%`} pass={checked ? last.bidDepthQuote.gte(t.minDepthQuote) : null} />
-              <Check label="Ask depth" value={checked ? fmt(quoteUi(last.askDepthQuote)) : "—"} target={`≥ ${fmt(quoteUi(t.minDepthQuote))} within ±${t.depthWindowBps / 100}%`} pass={checked ? last.askDepthQuote.gte(t.minDepthQuote) : null} />
-              <Check label="Price vs reference" value={checked ? `${last.refDeviationBps} bps` : "—"} target={`≤ ${t.maxRefDeviationBps} bps`} pass={checked ? refDevOk : null} />
+              <Check label="Spread" value={!checked ? "—" : last.spreadBps === 65535 ? "One side empty" : `${last.spreadBps} bps`} target={`target ≤ ${t.maxSpreadBps} bps at ${fmt(quoteUi(t.minDepthQuote) / 10)} size`} pass={checked ? last.spreadBps <= t.maxSpreadBps : null} />
+              <Check label="Bids committed" value={checked ? fmt(quoteUi(last.bidDepthQuote)) : "—"} target={`target ≥ ${fmt(quoteUi(t.minDepthQuote))} within ${t.depthWindowBps / 100}% below`} pass={checked ? last.bidDepthQuote.gte(t.minDepthQuote) : null} />
+              <Check label="Asks committed" value={checked ? fmt(quoteUi(last.askDepthQuote)) : "—"} target={`target ≥ ${fmt(quoteUi(t.minDepthQuote))} within ${t.depthWindowBps / 100}% above`} pass={checked ? last.askDepthQuote.gte(t.minDepthQuote) : null} />
+              <Check label="Reference vs graduated pool" value={checked ? `${last.refDeviationBps} bps` : "—"} target="for information, not scored" pass={null} />
             </div>
           </section>
 
@@ -167,10 +173,15 @@ export default function MandatePage({ params }: { params: Promise<{ id: string }
             <div className="panel-head">
               <h2>The vault&apos;s quotes</h2>
               <span className="mono muted">
-                active {fmtPrice(book?.activeUi ?? 0)} · reference {fmtPrice(book?.refUi ?? 0)}
+                reference {fmtPrice(book?.refUi ?? 0)} · active {fmtPrice(book?.activeUi ?? 0)} · graduated pool {fmtPrice(book?.dammUi ?? 0)}
               </span>
             </div>
-            {book && <DepthLadder bins={book.bins} activeBinId={book.pair.activeId} refUi={book.refUi} bandBps={t.bandBps} />}
+            {book && <DepthLadder bins={book.bins} activeBinId={book.pair.activeId} refBin={book.refBin} refUi={book.refUi} bandBps={t.bandBps} />}
+            {book && book.targetBin !== book.refBin && (
+              <p className="hint" style={{ marginTop: 8 }}>
+                The time-weighted price is {book.targetBin > book.refBin ? "above" : "below"} the reference; the reference is moving toward it at up to {t.anchorSpeedBpsPerMin / 100}% a minute.
+              </p>
+            )}
           </section>
         </div>
 
@@ -180,9 +191,7 @@ export default function MandatePage({ params }: { params: Promise<{ id: string }
             <div className="stack" style={{ gap: 12 }}>
               {status === "Active" && (
                 <div className="actions">
-                  <button className="btn" onClick={snapshot} disabled={!!busy || cooldown > 0}>
-                    {cooldown > 0 ? `Next check in ${cooldown}s` : "Take a snapshot"}
-                  </button>
+                  <button className="btn" onClick={snapshot} disabled={!!busy}>Take a snapshot</button>
                   <button className="btn ghost" onClick={finalize} disabled={!!busy || now < periodEnd}>Finalize periods</button>
                 </div>
               )}
@@ -195,13 +204,13 @@ export default function MandatePage({ params }: { params: Promise<{ id: string }
                 <div className="stack" style={{ gap: 8 }}>
                   <div className="form-grid">
                     <label className="field">Deploy share of idle inventory (%)<input id="deploy-pct" type="number" min={1} max={100} value={pct} onChange={(e) => setPct(Number(e.target.value))} /></label>
-                    <label className="field">Bins each side of active<input id="deploy-width" type="number" min={1} max={34} value={halfWidth} onChange={(e) => setHalfWidth(Number(e.target.value))} /></label>
+                    <label className="field">Bins each side of the reference<input id="deploy-width" type="number" min={1} max={34} value={halfWidth} onChange={(e) => setHalfWidth(Number(e.target.value))} /></label>
                   </div>
                   <div className="actions">
                     <button className="btn brass" onClick={deploy} disabled={!!busy}>Deploy inventory</button>
                     <button className="btn ghost" onClick={() => pull(false)} disabled={!!busy}>Pull liquidity</button>
                   </div>
-                  <p className="hint">The program rejects any bin outside ±{t.bandBps / 100}% of the reference price. Pulled liquidity returns to the vault, never to your wallet.</p>
+                  <p className="hint">The program only accepts bids at or below the reference price and asks at or above it, within ±{t.bandBps / 100}%. Pulled liquidity returns to the vault, never to your wallet.</p>
                 </div>
               )}
               {isMaker && earnedUnclaimed > 0 && <button className="btn ghost" onClick={claim} disabled={!!busy}>Claim {fmt(earnedUnclaimed)} earned fees</button>}
@@ -238,11 +247,12 @@ export default function MandatePage({ params }: { params: Promise<{ id: string }
               <dt>Max spread</dt><dd>{t.maxSpreadBps} bps</dd>
               <dt>Min depth each side</dt><dd className="num">{fmt(quoteUi(t.minDepthQuote))} within ±{t.depthWindowBps / 100}%</dd>
               <dt>Allowed band</dt><dd>±{t.bandBps / 100}% of reference</dd>
-              <dt>Max deviation from reference</dt><dd>{t.maxRefDeviationBps} bps</dd>
+              <dt>Reference price</dt><dd>DLMM TWAP over {duration(t.anchorTwapSecs)}, moves ≤ {t.anchorSpeedBpsPerMin / 100}%/min</dd>
+              <dt>Liquidity lock</dt><dd>{duration(t.liquidityLockSecs)} after each deposit</dd>
               <dt>Slash after</dt><dd>{t.maxConsecutiveFailures} failed periods in a row</dd>
               <dt>Slash size</dt><dd>{t.slashBps / 100}% of bond</dd>
               <dt>DLMM pair</dt><dd className="addr">{short(m.lbPair, 6)}</dd>
-              <dt>Reference (DAMM v2)</dt><dd className="addr">{short(m.referencePool, 6)}</dd>
+              <dt>Graduated pool (DAMM v2)</dt><dd className="addr">{short(m.referencePool, 6)}</dd>
             </dl>
           </section>
         </div>

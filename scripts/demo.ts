@@ -197,8 +197,8 @@ async function main() {
   await ensureAta(conn, launchpad, baseMint.publicKey, launchpad.publicKey);
   const terms: MandateTerms = {
     feePerPeriod: new BN(1_000_000), periodSecs: 120, durationPeriods: 720, bondAmount: new BN(250_000_000),
-    maxSpreadBps: 100, minDepthQuote: new BN(500_000_000), depthWindowBps: 200, bandBps: 500, maxRefDeviationBps: 150,
-    minSnapshotIntervalSecs: 20, maxConsecutiveFailures: 5, slashBps: 5_000,
+    maxSpreadBps: 100, minDepthQuote: new BN(500_000_000), depthWindowBps: 200, bandBps: 500,
+    anchorTwapSecs: 120, anchorSpeedBpsPerMin: 200, liquidityLockSecs: 20, maxConsecutiveFailures: 5, slashBps: 5_000,
   };
   const mandate = pda.mandate(launchpad.publicKey, baseMint.publicKey, 1);
   await sendIxs(conn, launchpad, [
