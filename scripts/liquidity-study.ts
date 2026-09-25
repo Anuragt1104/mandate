@@ -137,6 +137,18 @@ async function main() {
     ),
   };
 
+  // Compact version for the web app: summary + depth histogram.
+  const BUCKETS = [0.01, 1, 10, 100, 1_000, 10_000, Infinity];
+  const LABELS = ["< $0.01", "$0.01–1", "$1–10", "$10–100", "$100–1K", "$1K–10K", "> $10K"];
+  const histogram = (rs: any[]) =>
+    LABELS.map((label, i) => ({ label, count: rs.filter((r) => r.depth2pctUsd < BUCKETS[i] && (i === 0 || r.depth2pctUsd >= BUCKETS[i - 1])).length }));
+  const appOut = path.resolve(__dirname, "../app/public/study.json");
+  fs.mkdirSync(path.dirname(appOut), { recursive: true });
+  fs.writeFileSync(
+    appOut,
+    JSON.stringify({ summary, histogram: { all: histogram(rows), volume24hAtLeast10k: histogram(rows.filter((r) => r.volume24hUsd >= 10_000)) } }, null, 2),
+  );
+
   const out = path.resolve(__dirname, "../data");
   fs.mkdirSync(out, { recursive: true });
   fs.writeFileSync(path.join(out, "liquidity-study.json"), JSON.stringify({ summary, rows }, null, 2));

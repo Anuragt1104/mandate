@@ -1,0 +1,162 @@
+{
+  "summary": {
+    "generatedAt": "2026-09-25T01:23:44.679Z",
+    "source": "Meteora DAMM v2 data API (discovery, newest first) + mainnet pool accounts (depth)",
+    "poolsScanned": 3000,
+    "depthWindow": "±2% (two-sided minimum of bid and ask depth)",
+    "all": {
+      "pools": 2755,
+      "medianTvlUsd": 0.2013168641302968,
+      "medianVolume24hUsd": 3.0036709500341163,
+      "medianDepth2pctUsd": 0.001971383318760387,
+      "medianDepthToVolume24h": 0.00002251476817323364,
+      "shareDepthBelow100Usd": 1,
+      "shareDepthBelow1000Usd": 1,
+      "shareDepthBelow5000Usd": 1
+    },
+    "tvlAtLeast1k": {
+      "pools": 13,
+      "medianTvlUsd": 4638.209597818496,
+      "medianVolume24hUsd": 68256.55600185363,
+      "medianDepth2pctUsd": 22.986409498602665,
+      "medianDepthToVolume24h": 0.0006903603897553415,
+      "shareDepthBelow100Usd": 1,
+      "shareDepthBelow1000Usd": 1,
+      "shareDepthBelow5000Usd": 1
+    },
+    "volume24hAtLeast10k": {
+      "pools": 426,
+      "medianTvlUsd": 0.43056597990282264,
+      "medianVolume24hUsd": 19335.70755321995,
+      "medianDepth2pctUsd": 0.004285650150086464,
+      "medianDepthToVolume24h": 2.380715892923294e-7,
+      "shareDepthBelow100Usd": 1,
+      "shareDepthBelow1000Usd": 1,
+      "shareDepthBelow5000Usd": 1
+    },
+    "byLaunchpad": {
+      "met-dbc": {
+        "pools": 2626,
+        "medianTvlUsd": 0.17942651156840297,
+        "medianVolume24hUsd": 3.5352865634033224,
+        "medianDepth2pctUsd": 0.0017795929667605674,
+        "medianDepthToVolume24h": 0.000018858432649004555,
+        "shareDepthBelow100Usd": 1,
+        "shareDepthBelow1000Usd": 1,
+        "shareDepthBelow5000Usd": 1
+      },
+      "stonkfun": {
+        "pools": 74,
+        "medianTvlUsd": 1.6393657368816936,
+        "medianVolume24hUsd": 2.1298298963104036,
+        "medianDepth2pctUsd": 0.008859591066195261,
+        "medianDepthToVolume24h": 0.002678714795966217,
+        "shareDepthBelow100Usd": 1,
+        "shareDepthBelow1000Usd": 1,
+        "shareDepthBelow5000Usd": 1
+      },
+      "pump.fun": {
+        "pools": 42,
+        "medianTvlUsd": 0.9469793765930373,
+        "medianVolume24hUsd": 1.60151475718098,
+        "medianDepth2pctUsd": 0.005768300613227421,
+        "medianDepthToVolume24h": 0.0017877116802945973,
+        "shareDepthBelow100Usd": 1,
+        "shareDepthBelow1000Usd": 1,
+        "shareDepthBelow5000Usd": 1
+      },
+      "raydium-launchlab": {
+        "pools": 9,
+        "medianTvlUsd": 9.08888712419077,
+        "medianVolume24hUsd": 16.487250232846005,
+        "medianDepth2pctUsd": 0.05038631912012851,
+        "medianDepthToVolume24h": 0.0011418085498940227,
+        "shareDepthBelow100Usd": 1,
+        "shareDepthBelow1000Usd": 1,
+        "shareDepthBelow5000Usd": 1
+      },
+      "ember": {
+        "pools": 3,
+        "medianTvlUsd": 2.301855093134841,
+        "medianVolume24hUsd": 5.093505982840564,
+        "medianDepth2pctUsd": 0.01354288212089464,
+        "medianDepthToVolume24h": 0.0026588526972421457,
+        "shareDepthBelow100Usd": 1,
+        "shareDepthBelow1000Usd": 1,
+        "shareDepthBelow5000Usd": 1
+      },
+      "letsbonk.fun": {
+        "pools": 1,
+        "medianTvlUsd": 2.3171633855733025,
+        "medianVolume24hUsd": 0,
+        "medianDepth2pctUsd": 0.011664938590690562,
+        "medianDepthToVolume24h": 0,
+        "shareDepthBelow100Usd": 1,
+        "shareDepthBelow1000Usd": 1,
+        "shareDepthBelow5000Usd": 1
+      }
+    }
+  },
+  "histogram": {
+    "all": [
+      {
+        "label": "< $0.01",
+        "count": 2627
+      },
+      {
+        "label": "$0.01–1",
+        "count": 105
+      },
+      {
+        "label": "$1–10",
+        "count": 12
+      },
+      {
+        "label": "$10–100",
+        "count": 11
+      },
+      {
+        "label": "$100–1K",
+        "count": 0
+      },
+      {
+        "label": "$1K–10K",
+        "count": 0
+      },
+      {
+        "label": "> $10K",
+        "count": 0
+      }
+    ],
+    "volume24hAtLeast10k": [
+      {
+        "label": "< $0.01",
+        "count": 409
+      },
+      {
+        "label": "$0.01–1",
+        "count": 7
+      },
+      {
+        "label": "$1–10",
+        "count": 2
+      },
+      {
+        "label": "$10–100",
+        "count": 8
+      },
+      {
+        "label": "$100–1K",
+        "count": 0
+      },
+      {
+        "label": "$1K–10K",
+        "count": 0
+      },
+      {
+        "label": "> $10K",
+        "count": 0
+      }
+    ]
+  }
+}

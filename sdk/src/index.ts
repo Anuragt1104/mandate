@@ -511,3 +511,34 @@ export function dlmmInitBinArrayIx(lbPair: PublicKey, index: number, funder: Pub
     data,
   });
 }
+
+/** DLMM `swap2` (exact in). `xToY` sells token X for token Y. */
+export function dlmmSwapIx(p: {
+  lbPair: PublicKey;
+  pair: LbPairInfo;
+  user: PublicKey;
+  userTokenIn: PublicKey;
+  userTokenOut: PublicKey;
+  amountIn: bigint;
+  minAmountOut?: bigint;
+  binArrays: PublicKey[];
+}): TransactionInstruction {
+  const data = Buffer.alloc(8 + 8 + 8 + 4);
+  Buffer.from([65, 75, 63, 76, 235, 91, 91, 136]).copy(data, 0);
+  data.writeBigUInt64LE(p.amountIn, 8);
+  data.writeBigUInt64LE(p.minAmountOut ?? 0n, 16);
+  data.writeUInt32LE(0, 24); // remaining_accounts_info.slices = []
+  const ro = (pubkey: PublicKey) => ({ pubkey, isSigner: false, isWritable: false });
+  const rw = (pubkey: PublicKey) => ({ pubkey, isSigner: false, isWritable: true });
+  return new TransactionInstruction({
+    programId: DLMM_PROGRAM_ID,
+    keys: [
+      rw(p.lbPair), ro(DLMM_PROGRAM_ID), rw(p.pair.reserveX), rw(p.pair.reserveY), rw(p.userTokenIn), rw(p.userTokenOut),
+      ro(p.pair.tokenX), ro(p.pair.tokenY), rw(p.pair.oracle), ro(DLMM_PROGRAM_ID),
+      { pubkey: p.user, isSigner: true, isWritable: false },
+      ro(TOKEN_PROGRAM_ID), ro(TOKEN_PROGRAM_ID), ro(MEMO_PROGRAM_ID), ro(DLMM_EVENT_AUTHORITY), ro(DLMM_PROGRAM_ID),
+      ...p.binArrays.map(rw),
+    ],
+    data,
+  });
+}
