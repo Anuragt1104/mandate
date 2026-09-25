@@ -358,3 +358,22 @@ export function writeReferencePool(svm: LiteSVM, address: PublicKey, tokenA: Pub
   writeU128(isqrt(priceQ64 << 64n), 456);
   svm.setAccount(address, { lamports: 10_000_000_000, data, owner: DAMM_V2_PROGRAM_ID, executable: false });
 }
+
+/** Sign and send a pre-built web3.js Transaction (e.g. from an SDK). */
+export function sendTx(svm: LiteSVM, tx: Transaction, signers: Keypair[]): TransactionMetadata {
+  tx.recentBlockhash = svm.latestBlockhash();
+  if (!tx.feePayer) tx.feePayer = signers[0].publicKey;
+  const hasCu = tx.instructions.some((i) => i.programId.equals(ComputeBudgetProgram.programId));
+  if (!hasCu) tx.instructions.unshift(ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }));
+  const uniq = new Map<string, Keypair>();
+  signers.forEach((k) => uniq.set(k.publicKey.toBase58(), k));
+  tx.signatures = [];
+  tx.sign(...uniq.values());
+  const res = svm.sendTransaction(tx);
+  svm.expireBlockhash();
+  if (res instanceof FailedTransactionMetadata) {
+    const logs = res.meta().logs();
+    throw new TxError(logs, `tx failed: ${res.err().toString()}\n${logs.slice(-30).join("\n")}`);
+  }
+  return res;
+}
