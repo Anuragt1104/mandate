@@ -3,6 +3,8 @@ resolver = "2"
 members = ["programs/*"]
 
 [profile.release]
+# Size-optimized: program rent scales with binary size.
+opt-level = "z"
 overflow-checks = true
 lto = "fat"
 codegen-units = 1

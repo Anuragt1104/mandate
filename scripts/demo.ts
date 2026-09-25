@@ -50,7 +50,9 @@ import { RPC_URL, loadKeypair, log, makeClient, sendIxs } from "../keeper/common
 
 const ROOT = path.resolve(__dirname, "..");
 const DLMM_PROGRAM_ID = new PublicKey("LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo");
-const PRESET_BIN_STEP_25 = new PublicKey("FxGzUdJZWPCe7LiZvB9YLDtyHBZcC8EBpG2Hhw9T8Yts");
+// DLMM PresetParameter2 for the demo pair. Mainnet/localnet: bin step 25. Devnet only has
+// bin step 10 presets, e.g. DLMM_PRESET=4vP4DFDJLRz85NBCfJALYPNdieWwzQSstrUuTms1gekn.
+const DLMM_PRESET = new PublicKey(process.env.DLMM_PRESET ?? "FxGzUdJZWPCe7LiZvB9YLDtyHBZcC8EBpG2Hhw9T8Yts");
 const DAMM_V2_CONFIG_FIXED_25 = new PublicKey("7F6dnUcRuyM2TwR8myT1dYypFXpPSxqwKNSFNkxyNESd");
 const DLMM_EVENT_AUTHORITY = PublicKey.findProgramAddressSync([Buffer.from("__event_authority")], DLMM_PROGRAM_ID)[0];
 
@@ -103,7 +105,7 @@ function saveKey(name: string, kp: Keypair) {
 
 async function createDlmmPair(conn: Connection, payer: Keypair, tokenX: PublicKey, tokenY: PublicKey, activeId: number) {
   const [minKey, maxKey] = Buffer.compare(tokenX.toBuffer(), tokenY.toBuffer()) === 1 ? [tokenY, tokenX] : [tokenX, tokenY];
-  const lbPair = PublicKey.findProgramAddressSync([PRESET_BIN_STEP_25.toBuffer(), minKey.toBuffer(), maxKey.toBuffer()], DLMM_PROGRAM_ID)[0];
+  const lbPair = PublicKey.findProgramAddressSync([DLMM_PRESET.toBuffer(), minKey.toBuffer(), maxKey.toBuffer()], DLMM_PROGRAM_ID)[0];
   const reserveX = PublicKey.findProgramAddressSync([lbPair.toBuffer(), tokenX.toBuffer()], DLMM_PROGRAM_ID)[0];
   const reserveY = PublicKey.findProgramAddressSync([lbPair.toBuffer(), tokenY.toBuffer()], DLMM_PROGRAM_ID)[0];
   const oracle = PublicKey.findProgramAddressSync([Buffer.from("oracle"), lbPair.toBuffer()], DLMM_PROGRAM_ID)[0];
@@ -115,7 +117,7 @@ async function createDlmmPair(conn: Connection, payer: Keypair, tokenX: PublicKe
   const ix = {
     programId: DLMM_PROGRAM_ID,
     keys: [
-      rw(lbPair), ro(DLMM_PROGRAM_ID), ro(tokenX), ro(tokenY), rw(reserveX), rw(reserveY), rw(oracle), ro(PRESET_BIN_STEP_25),
+      rw(lbPair), ro(DLMM_PROGRAM_ID), ro(tokenX), ro(tokenY), rw(reserveX), rw(reserveY), rw(oracle), ro(DLMM_PRESET),
       { pubkey: payer.publicKey, isSigner: true, isWritable: true },
       ro(DLMM_PROGRAM_ID), ro(DLMM_PROGRAM_ID), ro(TOKEN_PROGRAM_ID), ro(TOKEN_PROGRAM_ID), ro(SystemProgram.programId),
       ro(DLMM_EVENT_AUTHORITY), ro(DLMM_PROGRAM_ID),
@@ -144,7 +146,9 @@ async function main() {
   const buyer = Keypair.generate();
   const maker = Keypair.generate();
   const trader = Keypair.generate();
-  for (const k of [creator, buyer, maker, trader]) await fund(conn, launchpad, k.publicKey, isLocal ? 20 : 0.5);
+  // Off localnet, fund just enough: the maker pays for its position and bin arrays.
+  const sol = isLocal ? [20, 20, 20, 20] : [0.1, 0.05, 0.4, 0.1];
+  for (const [i, k] of [creator, buyer, maker, trader].entries()) await fund(conn, launchpad, k.publicKey, sol[i]);
   saveKey("maker", maker);
   saveKey("trader", trader);
 
@@ -189,9 +193,12 @@ async function main() {
 
   // 3) DLMM pair at the graduated price
   const pool = decodeDammPool((await conn.getAccountInfo(dammPool))!.data);
-  const activeId = binIdForAtomicPrice(Number(pool.sqrtPrice) ** 2 / 2 ** 128, 25);
+  const preset = await conn.getAccountInfo(DLMM_PRESET);
+  if (!preset) throw new Error(`DLMM preset ${DLMM_PRESET.toBase58()} not found on this cluster; set DLMM_PRESET`);
+  const binStep = preset.data.readUInt16LE(8);
+  const activeId = binIdForAtomicPrice(Number(pool.sqrtPrice) ** 2 / 2 ** 128, binStep);
   const lbPair = await createDlmmPair(conn, launchpad, baseMint.publicKey, quote, activeId);
-  log("demo", `DLMM pair ${lbPair.toBase58()} active bin ${activeId}`);
+  log("demo", `DLMM pair ${lbPair.toBase58()} bin step ${binStep}, active bin ${activeId}`);
 
   // 4) Mandates
   await ensureAta(conn, launchpad, baseMint.publicKey, launchpad.publicKey);
