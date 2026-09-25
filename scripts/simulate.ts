@@ -259,15 +259,17 @@ async function run() {
   const RETENDER = env("RETENDER_SECS", 90);
   const TIDEWATER = env("TIDEWATER_SECS", 150);
 
-  /** SLAs with a live position: somewhere a trader can actually trade (cached for 20 s). */
+  /** SLAs with a live position: somewhere a trader can actually trade (cached for a minute). */
   let liveCache: { at: number; list: PublicKey[] } = { at: 0, list: [] };
   async function liveMarkets(): Promise<PublicKey[]> {
-    if (now() - liveCache.at < 20) return liveCache.list;
+    if (now() - liveCache.at < 60) return liveCache.list;
+    const keys = [...new Set(Object.values(s.mandates))].map((a) => new PublicKey(a));
+    const infos = await conn.getMultipleAccountsInfo(keys);
     const out: PublicKey[] = [];
-    for (const addr of new Set(Object.values(s.mandates))) {
-      const m = await fetchMandate(conn, cl(c.watchtower), new PublicKey(addr)).catch(() => null);
-      if (m && statusName(m.status) === "Active" && !(m.position as PublicKey).equals(PublicKey.default)) out.push(new PublicKey(addr));
-    }
+    infos.forEach((info, i) => {
+      const m = info ? cl(c.watchtower).decodeMandate(info.data) : null;
+      if (m && statusName(m.status) === "Active" && !(m.position as PublicKey).equals(PublicKey.default)) out.push(keys[i]);
+    });
     liveCache = { at: now(), list: out };
     return out;
   }
@@ -309,7 +311,7 @@ async function run() {
 
   // Helios: the diligent maker, on ORBT (and the earlier MAND demo on devnet).
   const heliosMandates = [s.mandates.orbt, s.mandates.mand].filter(Boolean).map((a) => new PublicKey(a));
-  every(c.helios, [18, 28], async () => {
+  every(c.helios, [30, 45], async () => {
     for (const mandate of heliosMandates) {
       const did = await makerTick(conn, c.helios.key, cl(c.helios), mandate);
       if (did) say(c.helios, `${did} · ${label(mandate.toBase58())}`);
@@ -327,7 +329,7 @@ async function run() {
 
   // Lazy Capital: diligent until it isn't.
   const kite = new PublicKey(s.mandates.kite);
-  every(c.lazy, [18, 28], async () => {
+  every(c.lazy, [30, 45], async () => {
     if (!s.story.lazyQuitAt && now() - s.story.startedAt! < LAZY_QUIT) {
       const did = await makerTick(conn, c.lazy.key, cl(c.lazy), kite);
       if (did) say(c.lazy, `${did} · ${label(kite.toBase58())}`);
@@ -344,7 +346,7 @@ async function run() {
   });
 
   // Kite Protocol re-tenders after the breach settles; Tidewater picks it up.
-  every(c.kite, [10, 15], async () => {
+  every(c.kite, [20, 30], async () => {
     const m = await fetchMandate(conn, cl(c.kite), kite);
     const st = statusName(m.status);
     if (st === "Settled" && !s.story.kiteSettledAt) {
@@ -379,7 +381,7 @@ async function run() {
     say(c.kite, `posted a new SLA for KITE from its own treasury, open to any maker · bond 400 USDC, 0.75 USDC per compliant minute`);
   });
 
-  every(c.tidewater, [15, 25], async () => {
+  every(c.tidewater, [30, 45], async () => {
     if (!s.mandates.kite2 || now() - (s.story.retenderAt ?? Infinity) < TIDEWATER) return;
     const mandate = new PublicKey(s.mandates.kite2);
     if (!s.story.tidewaterAt) {
@@ -396,7 +398,7 @@ async function run() {
 
   // Traders.
   for (const who of [c.priya, c.marco, c.jun]) {
-    every(who, [25, 55], async () => {
+    every(who, [50, 100], async () => {
       const live = await liveMarkets();
       if (!live.length) return;
       const mandate = pick(live);

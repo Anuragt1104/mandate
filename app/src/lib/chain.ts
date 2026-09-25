@@ -29,7 +29,7 @@ const FALLBACKS = (process.env.NEXT_PUBLIC_RPC_FALLBACKS ?? "").split(",").filte
  * Every request goes through a per-method failover across endpoints of the cluster: public
  * devnet can hang on account reads while it still answers everything else.
  */
-export const rpcFetch = failoverFetch([RPC_URL, ...(FALLBACKS.length ? FALLBACKS : (PUBLIC_FALLBACKS[CLUSTER] ?? []))], { timeoutMs: 6_000, rounds: 2 });
+export const rpcFetch = failoverFetch([RPC_URL, ...(FALLBACKS.length ? FALLBACKS : (PUBLIC_FALLBACKS[CLUSTER] ?? []))], { timeoutMs: 8_000, hedgeMs: 1_500, rounds: 2 });
 
 let _conn: Connection | null = null;
 export function connection(): Connection {

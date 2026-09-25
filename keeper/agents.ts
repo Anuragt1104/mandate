@@ -11,9 +11,9 @@
  */
 import { BN } from "@coral-xyz/anchor";
 import { Connection, Keypair, PublicKey, TransactionInstruction } from "@solana/web3.js";
-import { createAssociatedTokenAccountIdempotentInstruction, getAccount, getAssociatedTokenAddressSync } from "@solana/spl-token";
-import { MandateClient, StrategyType, binArrayIndex, binArraysCovering, dlmmInitBinArrayIx, dlmmSwapIx, pda, statusName } from "../sdk/src";
-import { chainTime, fetchAnchor, fetchMandate, fetchMandates, fetchPair, sendIxs } from "./common";
+import { AccountLayout, createAssociatedTokenAccountIdempotentInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
+import { MandateClient, StrategyType, anchorState, binArrayIndex, binArraysCovering, decodeLbPair, decodeOracleLatest, dlmmInitBinArrayIx, dlmmSwapIx, pda, projectAnchor, statusName } from "../sdk/src";
+import { chainTime, fetchMandate, fetchMandates, fetchPair, sendIxs } from "./common";
 
 const POSITION_WIDTH = 70;
 const RECENTER_MARGIN = 12;
@@ -37,7 +37,7 @@ export async function makerTick(
   // Deploy a share of idle inventory; small remainders go in whole rather than in shrinking slices.
   const share = (amount: bigint, value: number, dust: number) =>
     new BN((value < dust * 20 ? amount : (amount * BigInt(Math.round(deployFraction * 1000))) / 1000n).toString());
-  let m = await fetchMandate(conn, client, mandate);
+  const m = await fetchMandate(conn, client, mandate);
   const status = statusName(m.status);
   if (status === "Open" && opts.autoAccept) {
     const quoteAta = getAssociatedTokenAddressSync(m.quoteMint, maker.publicKey, true);
@@ -49,18 +49,21 @@ export async function makerTick(
   }
   if (status !== "Active" || !(m.maker as PublicKey).equals(maker.publicKey)) return null;
 
-  const pair = await fetchPair(conn, m.lbPair);
+  // One batched read for the pair, its oracle and the vaults (public RPC is precious).
+  const [pairInfo, oracleInfo, baseVaultInfo, quoteVaultInfo] = await conn.getMultipleAccountsInfo([m.lbPair, m.oracle, m.baseVault, m.quoteVault]);
+  if (!pairInfo) throw new Error("lb pair not found");
+  const pair = decodeLbPair(pairInfo.data);
   const now = await chainTime(conn);
-  const ref = await fetchAnchor(conn, m, pair.binStep, now);
+  const ref = projectAnchor(anchorState(m), oracleInfo ? decodeOracleLatest(oracleInfo.data) : null, m.terms, pair.binStep, now).bin;
   const bandBins = Math.floor(Math.log(1 + m.terms.bandBps / 10_000) / Math.log(1 + pair.binStep / 10_000)) - 1;
   const hasPosition = !(m.position as PublicKey).equals(PublicKey.default);
 
   if (!hasPosition) {
     const lower = ref - Math.floor(POSITION_WIDTH / 2);
-    const missing: number[] = [];
-    for (let i = binArrayIndex(lower); i <= binArrayIndex(lower + POSITION_WIDTH - 1); i++) {
-      if (!(await conn.getAccountInfo(pda.binArray(m.lbPair, i)))) missing.push(i);
-    }
+    const indexes: number[] = [];
+    for (let i = binArrayIndex(lower); i <= binArrayIndex(lower + POSITION_WIDTH - 1); i++) indexes.push(i);
+    const arrays = await conn.getMultipleAccountsInfo(indexes.map((i) => pda.binArray(m.lbPair, i)));
+    const missing = indexes.filter((_, k) => !arrays[k]);
     if (missing.length) await sendIxs(conn, maker, missing.map((i) => dlmmInitBinArrayIx(m.lbPair, i, maker.publicKey)));
     await sendIxs(conn, maker, [await client.openPosition({ maker: maker.publicKey, mandate, m, lowerBinId: lower, width: POSITION_WIDTH })]);
     return `opened a position around reference bin ${ref}`;
@@ -81,11 +84,10 @@ export async function makerTick(
   const hi = Math.min(ref + Math.min(halfWidth, bandBins), upper);
   const bids = { min: lo, max: Math.min(ref + 1, pair.activeId, hi) };
   const asks = { min: Math.max(ref, pair.activeId, lo), max: hi };
-  const baseIdle = (await getAccount(conn, m.baseVault)).amount;
-  const quoteIdle = (await getAccount(conn, m.quoteVault)).amount;
+  const baseIdle = baseVaultInfo ? AccountLayout.decode(baseVaultInfo.data).amount : 0n;
+  const quoteIdle = quoteVaultInfo ? AccountLayout.decode(quoteVaultInfo.data).amount : 0n;
   const refPrice = Math.pow(1 + pair.binStep / 10_000, ref);
   const dust = m.terms.minDepthQuote.toNumber() / 50;
-  m = await fetchMandate(conn, client, mandate);
   const ixs: TransactionInstruction[] = [];
   const placed: string[] = [];
   if (bids.min <= bids.max && Number(quoteIdle) >= dust) {
@@ -165,6 +167,18 @@ export async function tradeOnce(
   return { buy, quoteSize, text: `${buy ? "bought" : "sold"} ${Math.round(quoteSize).toLocaleString("en-US")} USDC worth` };
 }
 
+/** The mandate list, rediscovered once a minute; in between, one batched read refreshes it. */
+let watchList: { at: number; keys: PublicKey[] } = { at: 0, keys: [] };
+async function watchedMandates(conn: Connection, client: MandateClient) {
+  if (Date.now() - watchList.at > 60_000) {
+    const all = await fetchMandates(conn, client);
+    watchList = { at: Date.now(), keys: all.map((x) => x.pubkey) };
+    return all;
+  }
+  const infos = await conn.getMultipleAccountsInfo(watchList.keys);
+  return watchList.keys.flatMap((pubkey, i) => (infos[i] ? [{ pubkey, m: client.decodeMandate(infos[i]!.data) }] : []));
+}
+
 /** Watchtower state: next check time per mandate, drawn at random so makers can't predict it. */
 export type CrankState = Map<string, number>;
 
@@ -177,7 +191,7 @@ export async function crankOnce(
 ) {
   const samples = opts.samplesPerPeriod ?? 3;
   const now = await chainTime(conn);
-  for (const { pubkey, m } of await fetchMandates(conn, client)) {
+  for (const { pubkey, m } of await watchedMandates(conn, client)) {
     const key = pubkey.toBase58();
     if (opts.only && !opts.only(key)) continue;
     const status = statusName(m.status);

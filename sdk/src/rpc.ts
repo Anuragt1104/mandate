@@ -1,22 +1,81 @@
 /**
  * A `fetch` for web3.js `Connection` that spreads JSON-RPC calls over several endpoints of
  * the same cluster. Public RPC degrades unevenly: an endpoint can keep answering some methods
- * while it hangs on others, so health is tracked per method. A call goes first to the endpoint
- * that last answered its method (the primary by default) and skips endpoints that recently
- * timed out on it; a timeout, HTTP 429/5xx or a JSON-RPC rate-limit error moves it on, with a
- * short backoff between rounds. Endpoints are re-probed after 90 seconds, so traffic returns
- * to the primary once it recovers.
+ * while it hangs on others, so health is tracked per method.
+ *
+ * Each call is a hedged race: it goes to the endpoint that last served its method well (the
+ * primary by default); if that has not answered within `hedgeMs`, or fails, the next endpoint
+ * is tried too, and the first good answer wins while the rest are cancelled. Timeouts, HTTP
+ * 429/5xx and JSON-RPC rate-limit errors count as failures. An endpoint that lost a race or
+ * timed out is tried after the others for that method for 90 seconds, so traffic returns to
+ * the primary once it recovers. Healthy calls never touch the fallbacks.
  */
 const RATE_LIMITED = /"error"\s*:\s*\{\s*"code"\s*:\s*(-32029|429|-32005)\b|too many requests|rate limit/i;
 const REPROBE_MS = 90_000;
 
-export function failoverFetch(endpoints: string[], opts: { timeoutMs?: number; rounds?: number } = {}) {
+export function failoverFetch(endpoints: string[], opts: { timeoutMs?: number; hedgeMs?: number; rounds?: number } = {}) {
   const urls = [...new Set(endpoints.filter(Boolean))];
-  const timeoutMs = opts.timeoutMs ?? 6_000;
-  const rounds = opts.rounds ?? 4;
-  const preferred = new Map<string, { idx: number; since: number }>();
-  const hungAt = new Map<string, number>();
+  const timeoutMs = opts.timeoutMs ?? 10_000;
+  const hedgeMs = opts.hedgeMs ?? 1_500;
+  const rounds = opts.rounds ?? 3;
+  const slowAt = new Map<string, number>();
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  async function accept(res: Response, url: string): Promise<Response> {
+    if (res.status === 429 || res.status >= 500) throw new Error(`${url} answered HTTP ${res.status}`);
+    if (RATE_LIMITED.test((await res.clone().text()).slice(0, 300))) throw new Error(`${url} is rate limiting`);
+    return res;
+  }
+
+  function race(order: number[], init: any, method: string): Promise<Response> {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let next = 0;
+      let running = 0;
+      let lastErr: unknown = new Error("no RPC endpoint answered");
+      const aborts = new Map<number, () => void>();
+      const launch = () => {
+        if (settled || next >= order.length) return;
+        const idx = order[next++];
+        running++;
+        const ctrl = new AbortController();
+        aborts.set(idx, () => ctrl.abort());
+        const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+        const hedge = setTimeout(launch, hedgeMs);
+        fetch(urls[idx], { ...init, signal: ctrl.signal })
+          .then((res) => accept(res, urls[idx]))
+          .then((res) => {
+            clearTimeout(timer);
+            clearTimeout(hedge);
+            if (settled) return;
+            settled = true;
+            // Endpoints still running lost the race: try them after the winner for a while.
+            for (const [other, abort] of aborts) {
+              if (other === idx) continue;
+              slowAt.set(`${method}|${other}`, Date.now());
+              abort();
+            }
+            slowAt.delete(`${method}|${idx}`);
+            resolve(res);
+          })
+          .catch((e) => {
+            clearTimeout(timer);
+            clearTimeout(hedge);
+            aborts.delete(idx);
+            running--;
+            if (settled) return;
+            lastErr = e;
+            slowAt.set(`${method}|${idx}`, Date.now());
+            if (next < order.length) launch();
+            else if (running === 0) {
+              settled = true;
+              reject(lastErr);
+            }
+          });
+      };
+      launch();
+    });
+  }
 
   return async (_input: any, init?: any): Promise<Response> => {
     let method = "";
@@ -26,31 +85,16 @@ export function failoverFetch(endpoints: string[], opts: { timeoutMs?: number; r
     } catch {
       /* not a JSON-RPC body */
     }
-    const hung = (idx: number) => Date.now() - (hungAt.get(`${method}|${idx}`) ?? 0) < REPROBE_MS;
-    const pref = preferred.get(method);
-    const start = pref && Date.now() - pref.since < REPROBE_MS ? pref.idx : 0;
-    const order = urls.map((_, i) => i).sort((a, b) => Number(hung(a)) - Number(hung(b)) || Number(b === start) - Number(a === start) || a - b);
-
-    let lastErr: unknown = new Error("no RPC endpoint answered");
+    let lastErr: unknown;
     for (let round = 0; round < rounds; round++) {
-      const allHung = order.every(hung);
-      for (const idx of order) {
-        if (round === 0 && !allHung && hung(idx)) continue;
-        try {
-          const res = await fetch(urls[idx], { ...init, signal: AbortSignal.timeout(timeoutMs) });
-          if (res.status === 429 || res.status >= 500) throw new Error(`${urls[idx]} answered HTTP ${res.status}`);
-          const head = (await res.clone().text()).slice(0, 300);
-          if (RATE_LIMITED.test(head)) throw new Error(`${urls[idx]} is rate limiting`);
-          hungAt.delete(`${method}|${idx}`);
-          if (idx === 0) preferred.delete(method);
-          else if (!pref || pref.idx !== idx || start === 0) preferred.set(method, { idx, since: Date.now() });
-          return res;
-        } catch (e) {
-          lastErr = e;
-          if ((e as any)?.name === "TimeoutError") hungAt.set(`${method}|${idx}`, Date.now());
-        }
+      const slow = (i: number) => Date.now() - (slowAt.get(`${method}|${i}`) ?? 0) < REPROBE_MS;
+      const order = urls.map((_, i) => i).sort((a, b) => Number(slow(a)) - Number(slow(b)) || a - b);
+      try {
+        return await race(order, init, method);
+      } catch (e) {
+        lastErr = e;
+        await sleep(Math.min(8_000, 500 * 2 ** round));
       }
-      await sleep(Math.min(8_000, 400 * 2 ** round));
     }
     throw lastErr;
   };
