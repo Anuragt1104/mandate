@@ -1,0 +1,2477 @@
+{
+  "address": "3YetFVe4F6MuYaHH7pAmTCZjtMnunQT1ufMdAY8rYFrn",
+  "metadata": {
+    "name": "mandate",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Mandate: enforceable designated-market-maker contracts on Solana"
+  },
+  "instructions": [
+    {
+      "name": "accept_mandate",
+      "docs": [
+        "Market maker accepts the terms and posts the bond."
+      ],
+      "discriminator": [
+        97,
+        37,
+        171,
+        14,
+        46,
+        244,
+        200,
+        105
+      ],
+      "accounts": [
+        {
+          "name": "maker",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mandate",
+          "writable": true
+        },
+        {
+          "name": "maker_profile",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  107,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "maker"
+              }
+            ]
+          }
+        },
+        {
+          "name": "bond_vault",
+          "writable": true
+        },
+        {
+          "name": "maker_quote",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "add_liquidity",
+      "docs": [
+        "Maker deploys vault inventory into the position, within the reference band."
+      ],
+      "discriminator": [
+        181,
+        157,
+        89,
+        67,
+        143,
+        182,
+        52,
+        72
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "mandate",
+          "writable": true
+        },
+        {
+          "name": "lb_pair",
+          "writable": true
+        },
+        {
+          "name": "oracle"
+        },
+        {
+          "name": "position",
+          "writable": true
+        },
+        {
+          "name": "base_vault",
+          "writable": true
+        },
+        {
+          "name": "quote_vault",
+          "writable": true
+        },
+        {
+          "name": "reserve_x",
+          "writable": true
+        },
+        {
+          "name": "reserve_y",
+          "writable": true
+        },
+        {
+          "name": "base_mint"
+        },
+        {
+          "name": "quote_mint"
+        },
+        {
+          "name": "event_authority",
+          "address": "D1ZN9Wj1fRSUQfCjhvnu1hqDMT7hzjzBBpi12nVniYD6"
+        },
+        {
+          "name": "dlmm_program",
+          "address": "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo"
+        },
+        {
+          "name": "memo_program",
+          "address": "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "AddLiquidityArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "cancel",
+      "docs": [
+        "Issuer cancels before any maker accepts; all funds are returned."
+      ],
+      "discriminator": [
+        232,
+        219,
+        223,
+        41,
+        219,
+        236,
+        220,
+        190
+      ],
+      "accounts": [
+        {
+          "name": "issuer",
+          "signer": true,
+          "relations": [
+            "mandate"
+          ]
+        },
+        {
+          "name": "mandate",
+          "writable": true
+        },
+        {
+          "name": "base_vault",
+          "writable": true
+        },
+        {
+          "name": "quote_vault",
+          "writable": true
+        },
+        {
+          "name": "fee_vault",
+          "writable": true
+        },
+        {
+          "name": "issuer_base",
+          "writable": true
+        },
+        {
+          "name": "issuer_quote",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claim_maker_fees",
+      "docs": [
+        "Maker claims fees earned for compliant periods."
+      ],
+      "discriminator": [
+        102,
+        69,
+        89,
+        31,
+        119,
+        199,
+        231,
+        77
+      ],
+      "accounts": [
+        {
+          "name": "maker",
+          "signer": true,
+          "relations": [
+            "mandate"
+          ]
+        },
+        {
+          "name": "mandate",
+          "writable": true
+        },
+        {
+          "name": "fee_vault",
+          "writable": true
+        },
+        {
+          "name": "maker_quote",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_position",
+      "docs": [
+        "Close an empty position (maker while active; anyone after)."
+      ],
+      "discriminator": [
+        123,
+        134,
+        81,
+        0,
+        49,
+        68,
+        98,
+        98
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "mandate",
+          "writable": true
+        },
+        {
+          "name": "position",
+          "writable": true
+        },
+        {
+          "name": "rent_receiver",
+          "writable": true
+        },
+        {
+          "name": "event_authority",
+          "address": "D1ZN9Wj1fRSUQfCjhvnu1hqDMT7hzjzBBpi12nVniYD6"
+        },
+        {
+          "name": "dlmm_program",
+          "address": "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "create_mandate",
+      "docs": [
+        "Issuer creates and funds a mandate over a DLMM pair, referenced to a DAMM v2 pool."
+      ],
+      "discriminator": [
+        230,
+        170,
+        158,
+        68,
+        33,
+        169,
+        16,
+        158
+      ],
+      "accounts": [
+        {
+          "name": "issuer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "base_mint"
+        },
+        {
+          "name": "quote_mint"
+        },
+        {
+          "name": "lb_pair"
+        },
+        {
+          "name": "oracle"
+        },
+        {
+          "name": "reference_pool"
+        },
+        {
+          "name": "mandate",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  110,
+                  100,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer"
+              },
+              {
+                "kind": "account",
+                "path": "base_mint"
+              },
+              {
+                "kind": "arg",
+                "path": "id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "score_log",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  99,
+                  111,
+                  114,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mandate"
+              }
+            ]
+          }
+        },
+        {
+          "name": "base_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mandate"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  115,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "quote_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mandate"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  111,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "fee_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mandate"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "bond_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mandate"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  111,
+                  110,
+                  100
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "issuer_base",
+          "writable": true
+        },
+        {
+          "name": "issuer_quote",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "id",
+          "type": "u64"
+        },
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "CreateMandateArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "deposit",
+      "docs": [
+        "Top up inventory or the fee budget."
+      ],
+      "discriminator": [
+        242,
+        35,
+        198,
+        137,
+        82,
+        225,
+        242,
+        182
+      ],
+      "accounts": [
+        {
+          "name": "depositor",
+          "signer": true
+        },
+        {
+          "name": "mandate"
+        },
+        {
+          "name": "base_vault",
+          "writable": true
+        },
+        {
+          "name": "quote_vault",
+          "writable": true
+        },
+        {
+          "name": "fee_vault",
+          "writable": true
+        },
+        {
+          "name": "from_base",
+          "writable": true
+        },
+        {
+          "name": "from_quote",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "base",
+          "type": "u64"
+        },
+        {
+          "name": "quote",
+          "type": "u64"
+        },
+        {
+          "name": "fees",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "finalize",
+      "docs": [
+        "Permissionless: finalize elapsed periods, slash on breach, expire at term end."
+      ],
+      "discriminator": [
+        171,
+        61,
+        218,
+        56,
+        127,
+        115,
+        12,
+        217
+      ],
+      "accounts": [
+        {
+          "name": "mandate",
+          "writable": true
+        },
+        {
+          "name": "score_log",
+          "writable": true
+        },
+        {
+          "name": "maker_profile",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  107,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mandate.maker",
+                "account": "Mandate"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "init_router",
+      "docs": [
+        "Launchpad creates its router (used as the DBC `leftover_receiver`)."
+      ],
+      "discriminator": [
+        234,
+        132,
+        181,
+        34,
+        176,
+        101,
+        142,
+        94
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "router",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  116,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "authority"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "open_position",
+      "docs": [
+        "Maker opens the DLMM position owned by the mandate PDA."
+      ],
+      "discriminator": [
+        135,
+        128,
+        47,
+        77,
+        15,
+        152,
+        240,
+        49
+      ],
+      "accounts": [
+        {
+          "name": "maker",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mandate",
+          "writable": true
+        },
+        {
+          "name": "lb_pair"
+        },
+        {
+          "name": "position",
+          "writable": true
+        },
+        {
+          "name": "event_authority",
+          "address": "D1ZN9Wj1fRSUQfCjhvnu1hqDMT7hzjzBBpi12nVniYD6"
+        },
+        {
+          "name": "dlmm_program",
+          "address": "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "lower_bin_id",
+          "type": "i32"
+        },
+        {
+          "name": "width",
+          "type": "i32"
+        }
+      ]
+    },
+    {
+      "name": "register_launch",
+      "docs": [
+        "Launchpad maps a launched mint to its mandate."
+      ],
+      "discriminator": [
+        114,
+        114,
+        67,
+        23,
+        41,
+        70,
+        0,
+        225
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "router"
+          ]
+        },
+        {
+          "name": "router",
+          "writable": true
+        },
+        {
+          "name": "base_mint"
+        },
+        {
+          "name": "mandate"
+        },
+        {
+          "name": "launch",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  97,
+                  117,
+                  110,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "router"
+              },
+              {
+                "kind": "account",
+                "path": "base_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "remove_liquidity",
+      "docs": [
+        "Withdraw liquidity back into the vaults (maker while active; anyone after).",
+        "`bps = 0` with `claim_fees` only claims LP fees."
+      ],
+      "discriminator": [
+        80,
+        85,
+        209,
+        72,
+        24,
+        206,
+        177,
+        108
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "mandate",
+          "writable": true
+        },
+        {
+          "name": "lb_pair",
+          "writable": true
+        },
+        {
+          "name": "oracle"
+        },
+        {
+          "name": "position",
+          "writable": true
+        },
+        {
+          "name": "base_vault",
+          "writable": true
+        },
+        {
+          "name": "quote_vault",
+          "writable": true
+        },
+        {
+          "name": "reserve_x",
+          "writable": true
+        },
+        {
+          "name": "reserve_y",
+          "writable": true
+        },
+        {
+          "name": "base_mint"
+        },
+        {
+          "name": "quote_mint"
+        },
+        {
+          "name": "event_authority",
+          "address": "D1ZN9Wj1fRSUQfCjhvnu1hqDMT7hzjzBBpi12nVniYD6"
+        },
+        {
+          "name": "dlmm_program",
+          "address": "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo"
+        },
+        {
+          "name": "memo_program",
+          "address": "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "from_bin_id",
+          "type": "i32"
+        },
+        {
+          "name": "to_bin_id",
+          "type": "i32"
+        },
+        {
+          "name": "bps",
+          "type": "u16"
+        },
+        {
+          "name": "claim_fees",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "route_leftover",
+      "docs": [
+        "Permissionless: move DBC leftover supply from the router into the mandate vault."
+      ],
+      "discriminator": [
+        125,
+        251,
+        160,
+        222,
+        216,
+        24,
+        139,
+        38
+      ],
+      "accounts": [
+        {
+          "name": "router",
+          "relations": [
+            "launch"
+          ]
+        },
+        {
+          "name": "launch",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  97,
+                  117,
+                  110,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "router"
+              },
+              {
+                "kind": "account",
+                "path": "mandate.base_mint",
+                "account": "Mandate"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mandate",
+          "relations": [
+            "launch"
+          ]
+        },
+        {
+          "name": "router_base",
+          "writable": true
+        },
+        {
+          "name": "base_vault",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "settle",
+      "docs": [
+        "Permissionless: distribute all funds once breached/expired and unwound."
+      ],
+      "discriminator": [
+        175,
+        42,
+        185,
+        87,
+        144,
+        131,
+        102,
+        212
+      ],
+      "accounts": [
+        {
+          "name": "mandate",
+          "writable": true
+        },
+        {
+          "name": "base_vault",
+          "writable": true
+        },
+        {
+          "name": "quote_vault",
+          "writable": true
+        },
+        {
+          "name": "fee_vault",
+          "writable": true
+        },
+        {
+          "name": "bond_vault",
+          "writable": true
+        },
+        {
+          "name": "issuer_base",
+          "writable": true
+        },
+        {
+          "name": "issuer_quote",
+          "writable": true
+        },
+        {
+          "name": "maker_quote",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "snapshot",
+      "docs": [
+        "Permissionless: measure the maker's quotes and record compliance."
+      ],
+      "discriminator": [
+        144,
+        236,
+        6,
+        133,
+        233,
+        160,
+        21,
+        94
+      ],
+      "accounts": [
+        {
+          "name": "cranker",
+          "signer": true
+        },
+        {
+          "name": "mandate",
+          "writable": true
+        },
+        {
+          "name": "score_log",
+          "writable": true
+        },
+        {
+          "name": "maker_profile",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  107,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mandate.maker",
+                "account": "Mandate"
+              }
+            ]
+          }
+        },
+        {
+          "name": "lb_pair"
+        },
+        {
+          "name": "oracle"
+        },
+        {
+          "name": "reference_pool"
+        },
+        {
+          "name": "position"
+        }
+      ],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "LaunchRecord",
+      "discriminator": [
+        146,
+        240,
+        197,
+        204,
+        6,
+        6,
+        87,
+        75
+      ]
+    },
+    {
+      "name": "MakerProfile",
+      "discriminator": [
+        48,
+        34,
+        133,
+        230,
+        74,
+        9,
+        244,
+        74
+      ]
+    },
+    {
+      "name": "Mandate",
+      "discriminator": [
+        113,
+        216,
+        98,
+        159,
+        185,
+        63,
+        55,
+        18
+      ]
+    },
+    {
+      "name": "Router",
+      "discriminator": [
+        94,
+        226,
+        217,
+        169,
+        186,
+        4,
+        198,
+        7
+      ]
+    },
+    {
+      "name": "ScoreLog",
+      "discriminator": [
+        233,
+        99,
+        178,
+        103,
+        238,
+        194,
+        215,
+        228
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "LeftoverRouted",
+      "discriminator": [
+        99,
+        126,
+        116,
+        111,
+        77,
+        255,
+        4,
+        198
+      ]
+    },
+    {
+      "name": "LiquidityDeployed",
+      "discriminator": [
+        45,
+        142,
+        239,
+        163,
+        248,
+        210,
+        146,
+        139
+      ]
+    },
+    {
+      "name": "LiquidityWithdrawn",
+      "discriminator": [
+        240,
+        120,
+        73,
+        139,
+        154,
+        31,
+        218,
+        68
+      ]
+    },
+    {
+      "name": "MakerFeesClaimed",
+      "discriminator": [
+        80,
+        254,
+        205,
+        35,
+        238,
+        135,
+        223,
+        133
+      ]
+    },
+    {
+      "name": "MakerSlashed",
+      "discriminator": [
+        71,
+        137,
+        4,
+        77,
+        124,
+        34,
+        188,
+        21
+      ]
+    },
+    {
+      "name": "MandateAccepted",
+      "discriminator": [
+        127,
+        67,
+        250,
+        178,
+        2,
+        3,
+        121,
+        190
+      ]
+    },
+    {
+      "name": "MandateCreated",
+      "discriminator": [
+        140,
+        30,
+        209,
+        254,
+        5,
+        128,
+        147,
+        113
+      ]
+    },
+    {
+      "name": "MandateExpired",
+      "discriminator": [
+        205,
+        211,
+        11,
+        201,
+        229,
+        187,
+        173,
+        14
+      ]
+    },
+    {
+      "name": "MandateSettled",
+      "discriminator": [
+        178,
+        149,
+        252,
+        51,
+        104,
+        193,
+        48,
+        113
+      ]
+    },
+    {
+      "name": "PeriodFinalized",
+      "discriminator": [
+        181,
+        157,
+        218,
+        0,
+        139,
+        166,
+        39,
+        238
+      ]
+    },
+    {
+      "name": "SnapshotTaken",
+      "discriminator": [
+        113,
+        204,
+        151,
+        224,
+        2,
+        128,
+        237,
+        207
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InvalidParams",
+      "msg": "Invalid mandate parameters"
+    },
+    {
+      "code": 6001,
+      "name": "InvalidStatus",
+      "msg": "Mandate is not in the required status"
+    },
+    {
+      "code": 6002,
+      "name": "Unauthorized",
+      "msg": "Signer is not allowed to perform this action"
+    },
+    {
+      "code": 6003,
+      "name": "InvalidOwner",
+      "msg": "Account is not owned by the expected program"
+    },
+    {
+      "code": 6004,
+      "name": "InvalidAccountData",
+      "msg": "Account data is malformed or has the wrong discriminator"
+    },
+    {
+      "code": 6005,
+      "name": "PairMintMismatch",
+      "msg": "DLMM pair does not match the mandate base/quote mints (base must be token X)"
+    },
+    {
+      "code": 6006,
+      "name": "ReferenceMintMismatch",
+      "msg": "Reference pool does not match the mandate base/quote mints"
+    },
+    {
+      "code": 6007,
+      "name": "OutsideBand",
+      "msg": "Liquidity range is outside the allowed band around the reference price"
+    },
+    {
+      "code": 6008,
+      "name": "QuoteAboveReference",
+      "msg": "Quote may only be placed in bins at or below the reference price"
+    },
+    {
+      "code": 6009,
+      "name": "BaseBelowReference",
+      "msg": "Base may only be placed in bins at or above the reference price"
+    },
+    {
+      "code": 6010,
+      "name": "OracleMismatch",
+      "msg": "Oracle account does not match the DLMM pair"
+    },
+    {
+      "code": 6011,
+      "name": "FreezableBaseMint",
+      "msg": "Base mint has a freeze authority, which could freeze the mandate's vault"
+    },
+    {
+      "code": 6012,
+      "name": "RangeOutsidePosition",
+      "msg": "Liquidity range is outside the mandate position"
+    },
+    {
+      "code": 6013,
+      "name": "PositionAlreadyOpen",
+      "msg": "Mandate already has an open position"
+    },
+    {
+      "code": 6014,
+      "name": "NoPosition",
+      "msg": "Mandate has no open position"
+    },
+    {
+      "code": 6015,
+      "name": "PositionMismatch",
+      "msg": "Position account does not match the mandate"
+    },
+    {
+      "code": 6016,
+      "name": "MissingBinArray",
+      "msg": "A required bin array was not supplied"
+    },
+    {
+      "code": 6017,
+      "name": "NotActiveWindow",
+      "msg": "Mandate is not active at this time"
+    },
+    {
+      "code": 6018,
+      "name": "PositionNotEmpty",
+      "msg": "Position still holds liquidity"
+    },
+    {
+      "code": 6019,
+      "name": "MathOverflow",
+      "msg": "Math overflow"
+    },
+    {
+      "code": 6020,
+      "name": "InvalidTokenAccount",
+      "msg": "Token account does not match the expected vault or owner"
+    },
+    {
+      "code": 6021,
+      "name": "LaunchMismatch",
+      "msg": "Launch record does not match this mandate"
+    },
+    {
+      "code": 6022,
+      "name": "InsufficientVault",
+      "msg": "Insufficient vault balance"
+    },
+    {
+      "code": 6023,
+      "name": "LiquidityCooldown",
+      "msg": "Liquidity was added too recently to be removed"
+    }
+  ],
+  "types": [
+    {
+      "name": "AddLiquidityArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount_base",
+            "type": "u64"
+          },
+          {
+            "name": "amount_quote",
+            "type": "u64"
+          },
+          {
+            "name": "min_bin_id",
+            "type": "i32"
+          },
+          {
+            "name": "max_bin_id",
+            "type": "i32"
+          },
+          {
+            "name": "strategy_type",
+            "docs": [
+              "DLMM StrategyType (0..=8), e.g. 3 = SpotBalanced, 6 = SpotImBalanced."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "max_active_bin_slippage",
+            "type": "i32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Anchor",
+      "docs": [
+        "The mandate's reference price: a DLMM bin that follows the pair's oracle TWAP at a",
+        "bounded speed. See `anchor.rs`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bin",
+            "docs": [
+              "Reference bin; its DLMM price is the mandate's reference price."
+            ],
+            "type": "i32"
+          },
+          {
+            "name": "target",
+            "docs": [
+              "Latest TWAP bin the reference is moving toward."
+            ],
+            "type": "i32"
+          },
+          {
+            "name": "ts",
+            "docs": [
+              "Accrual clock for the speed limit."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "taint_ts",
+            "docs": [
+              "Oracle samples recorded before this time may include misattributed time."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "start_cum",
+            "docs": [
+              "TWAP window start (a DLMM oracle sample)."
+            ],
+            "type": "i128"
+          },
+          {
+            "name": "start_ts",
+            "type": "i64"
+          },
+          {
+            "name": "next_cum",
+            "docs": [
+              "Candidate for the next window start."
+            ],
+            "type": "i128"
+          },
+          {
+            "name": "next_ts",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CreateMandateArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "terms",
+            "type": {
+              "defined": {
+                "name": "MandateTerms"
+              }
+            }
+          },
+          {
+            "name": "base_deposit",
+            "type": "u64"
+          },
+          {
+            "name": "quote_deposit",
+            "type": "u64"
+          },
+          {
+            "name": "fee_budget",
+            "type": "u64"
+          },
+          {
+            "name": "designated_maker",
+            "docs": [
+              "Restrict acceptance to one maker; `Pubkey::default()` lets any maker accept."
+            ],
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LaunchRecord",
+      "docs": [
+        "Maps a launched base mint to the mandate that receives its leftover supply."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "router",
+            "type": "pubkey"
+          },
+          {
+            "name": "base_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "routed_amount",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LeftoverRouted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "base_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LiquidityDeployed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount_base",
+            "type": "u64"
+          },
+          {
+            "name": "amount_quote",
+            "type": "u64"
+          },
+          {
+            "name": "min_bin_id",
+            "type": "i32"
+          },
+          {
+            "name": "max_bin_id",
+            "type": "i32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LiquidityWithdrawn",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "from_bin_id",
+            "type": "i32"
+          },
+          {
+            "name": "to_bin_id",
+            "type": "i32"
+          },
+          {
+            "name": "bps",
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MakerFeesClaimed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "maker",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MakerProfile",
+      "docs": [
+        "Public track record of a market maker across all mandates."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "maker",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "mandates_accepted",
+            "type": "u32"
+          },
+          {
+            "name": "mandates_completed",
+            "type": "u32"
+          },
+          {
+            "name": "mandates_breached",
+            "type": "u32"
+          },
+          {
+            "name": "periods_ok",
+            "type": "u64"
+          },
+          {
+            "name": "periods_failed",
+            "type": "u64"
+          },
+          {
+            "name": "fees_earned",
+            "type": "u64"
+          },
+          {
+            "name": "bond_slashed",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MakerSlashed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "maker",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "consecutive_failed",
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Mandate",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "issuer",
+            "type": "pubkey"
+          },
+          {
+            "name": "maker",
+            "type": "pubkey"
+          },
+          {
+            "name": "base_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "quote_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "lb_pair",
+            "type": "pubkey"
+          },
+          {
+            "name": "oracle",
+            "docs": [
+              "The DLMM pair's oracle account (source of the TWAP)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "reference_pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "score_log",
+            "type": "pubkey"
+          },
+          {
+            "name": "base_vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "quote_vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "fee_vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "bond_vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "terms",
+            "type": {
+              "defined": {
+                "name": "MandateTerms"
+              }
+            }
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "MandateStatus"
+              }
+            }
+          },
+          {
+            "name": "position",
+            "docs": [
+              "DLMM position owned by this PDA (default when none is open)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "position_lower_bin_id",
+            "type": "i32"
+          },
+          {
+            "name": "position_width",
+            "type": "i32"
+          },
+          {
+            "name": "position_rent_payer",
+            "docs": [
+              "Who paid rent for the position (refunded on close)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "last_liquidity_add_ts",
+            "docs": [
+              "Last time the maker added liquidity; removals are blocked for",
+              "`liquidity_lock_secs` afterwards so liquidity cannot be added just for a",
+              "snapshot and pulled right after."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "anchor",
+            "docs": [
+              "Reference price state."
+            ],
+            "type": {
+              "defined": {
+                "name": "Anchor"
+              }
+            }
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "start_ts",
+            "type": "i64"
+          },
+          {
+            "name": "end_ts",
+            "type": "i64"
+          },
+          {
+            "name": "current_period",
+            "docs": [
+              "Period currently being observed (0-based, relative to `start_ts`)."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "cur_snapshots",
+            "type": "u16"
+          },
+          {
+            "name": "cur_failed_snapshots",
+            "type": "u16"
+          },
+          {
+            "name": "cur_worst_spread_bps",
+            "type": "u16"
+          },
+          {
+            "name": "cur_min_bid_depth",
+            "type": "u64"
+          },
+          {
+            "name": "cur_min_ask_depth",
+            "type": "u64"
+          },
+          {
+            "name": "snapshots_total",
+            "docs": [
+              "Total snapshots taken over the mandate's life."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "periods_ok",
+            "type": "u32"
+          },
+          {
+            "name": "periods_failed",
+            "type": "u32"
+          },
+          {
+            "name": "periods_unobserved",
+            "type": "u32"
+          },
+          {
+            "name": "consecutive_failed",
+            "type": "u16"
+          },
+          {
+            "name": "fees_earned",
+            "type": "u64"
+          },
+          {
+            "name": "fees_claimed",
+            "type": "u64"
+          },
+          {
+            "name": "bond_slashed",
+            "type": "u64"
+          },
+          {
+            "name": "last",
+            "type": {
+              "defined": {
+                "name": "Measurement"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "MandateAccepted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "maker",
+            "type": "pubkey"
+          },
+          {
+            "name": "start_ts",
+            "type": "i64"
+          },
+          {
+            "name": "end_ts",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MandateCreated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "issuer",
+            "type": "pubkey"
+          },
+          {
+            "name": "base_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "quote_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "lb_pair",
+            "type": "pubkey"
+          },
+          {
+            "name": "reference_pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "terms",
+            "type": {
+              "defined": {
+                "name": "MandateTerms"
+              }
+            }
+          },
+          {
+            "name": "base_deposit",
+            "type": "u64"
+          },
+          {
+            "name": "quote_deposit",
+            "type": "u64"
+          },
+          {
+            "name": "fee_budget",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MandateExpired",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MandateSettled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "to_issuer_base",
+            "type": "u64"
+          },
+          {
+            "name": "to_issuer_quote",
+            "type": "u64"
+          },
+          {
+            "name": "to_maker_quote",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MandateStatus",
+      "repr": {
+        "kind": "rust"
+      },
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Open"
+          },
+          {
+            "name": "Active"
+          },
+          {
+            "name": "Breached"
+          },
+          {
+            "name": "Expired"
+          },
+          {
+            "name": "Settled"
+          },
+          {
+            "name": "Cancelled"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MandateTerms",
+      "docs": [
+        "Terms agreed between the issuer and the market maker. Immutable after creation."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "fee_per_period",
+            "docs": [
+              "Quote paid to the maker for each compliant period."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "period_secs",
+            "docs": [
+              "Length of a scoring period in seconds (e.g. 3600)."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "duration_periods",
+            "docs": [
+              "Number of periods the mandate runs once accepted."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "bond_amount",
+            "docs": [
+              "Quote the maker must post as a performance bond."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "max_spread_bps",
+            "docs": [
+              "Max quoted spread around the reference price, in bps, measured at a size of",
+              "`min_depth_quote / SPREAD_SIZE_DIVISOR` on each side."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "min_depth_quote",
+            "docs": [
+              "Min committed liquidity (quote value) on each side within `depth_window_bps` of the reference."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "depth_window_bps",
+            "docs": [
+              "Window around the reference price in which committed liquidity is counted, in bps."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "band_bps",
+            "docs": [
+              "Mandated liquidity may only be placed in bins priced within ±band of the reference price."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "anchor_twap_secs",
+            "docs": [
+              "Length of the DLMM oracle TWAP window the reference follows, in seconds."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "anchor_speed_bps_per_min",
+            "docs": [
+              "Max speed at which the reference price may move toward the TWAP, in bps per minute."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "liquidity_lock_secs",
+            "docs": [
+              "Liquidity added while active must stay deployed at least this long before removal."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "max_consecutive_failures",
+            "docs": [
+              "Consecutive failed periods that trigger a slash."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "slash_bps",
+            "docs": [
+              "Share of the bond transferred to the issuer on breach, in bps."
+            ],
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Measurement",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ts",
+            "type": "i64"
+          },
+          {
+            "name": "ok",
+            "type": "bool"
+          },
+          {
+            "name": "spread_bps",
+            "docs": [
+              "Quoted spread at size around the reference (u16::MAX when a side is missing)."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "bid_depth_quote",
+            "docs": [
+              "Committed liquidity (quote value) at or below the reference, within the window."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "ask_depth_quote",
+            "docs": [
+              "Committed liquidity (quote value) above the reference, within the window."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "ref_deviation_bps",
+            "docs": [
+              "Informational: reference price vs the DAMM v2 (graduation) pool price."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "active_id",
+            "type": "i32"
+          },
+          {
+            "name": "anchor_bin",
+            "type": "i32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PeriodEntry",
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "period",
+            "type": "u32"
+          },
+          {
+            "name": "status",
+            "docs": [
+              "0 = empty, 1 = ok, 2 = failed, 3 = unobserved"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "snapshots",
+            "type": "u8"
+          },
+          {
+            "name": "worst_spread_bps",
+            "type": "u16"
+          },
+          {
+            "name": "min_bid_depth",
+            "type": "u64"
+          },
+          {
+            "name": "min_ask_depth",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PeriodFinalized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "period",
+            "type": "u32"
+          },
+          {
+            "name": "status",
+            "docs": [
+              "1 ok, 2 failed, 3 unobserved"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "snapshots",
+            "type": "u16"
+          },
+          {
+            "name": "fee_accrued",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Router",
+      "docs": [
+        "Launchpad router: set as the DBC config `leftover_receiver`, so unsold supply of every",
+        "token launched from that config lands in the router's ATAs and can be routed into the",
+        "token's mandate vault."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "launches",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ScoreLog",
+      "docs": [
+        "Ring buffer of finalized periods, read by dashboards."
+      ],
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "head",
+            "type": "u32"
+          },
+          {
+            "name": "count",
+            "type": "u32"
+          },
+          {
+            "name": "entries",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "PeriodEntry"
+                  }
+                },
+                168
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "SnapshotTaken",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "period",
+            "type": "u32"
+          },
+          {
+            "name": "ok",
+            "type": "bool"
+          },
+          {
+            "name": "spread_bps",
+            "type": "u16"
+          },
+          {
+            "name": "bid_depth_quote",
+            "type": "u64"
+          },
+          {
+            "name": "ask_depth_quote",
+            "type": "u64"
+          },
+          {
+            "name": "ref_deviation_bps",
+            "type": "u16"
+          },
+          {
+            "name": "active_id",
+            "type": "i32"
+          },
+          {
+            "name": "anchor_bin",
+            "type": "i32"
+          },
+          {
+            "name": "cranker",
+            "type": "pubkey"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { AnchorProvider, Idl, Program } from "@coral-xyz/anchor";
 import { useAnchorWallet, useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { ComputeBudgetProgram, PublicKey, Transaction, TransactionInstruction, Signer } from "@solana/web3.js";
-import idl from "../../../target/idl/mandate.json";
+import idl from "../../../sdk/idl/mandate.json";
 import { MandateClient } from "../../../sdk/src";
 import { useToast } from "@/components/Providers";
 import { explorerUrl } from "./chain";

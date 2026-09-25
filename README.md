@@ -46,7 +46,7 @@ npm install
 ```
 
 ```bash
-anchor build
+npm run build
 ```
 
 ```bash
@@ -57,7 +57,8 @@ npm run test:unit
 npm test
 ```
 
-`fetch-programs.sh` downloads the mainnet Meteora programs into `fixtures/programs/`. It uses
+`npm run build` runs `anchor build` and copies the IDL to `sdk/idl/`, which the app and bots
+read. `fetch-programs.sh` downloads the mainnet Meteora programs into `fixtures/programs/`. It uses
 `https://api.mainnet-beta.solana.com` unless `MAINNET_RPC` is set. The unit tests cover the
 math, the reference price and the measurement (20 tests). The integration tests run the full
 lifecycle, the reference price, the security regressions and the DBC → DAMM v2 → Mandate

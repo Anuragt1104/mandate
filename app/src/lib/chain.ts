@@ -3,7 +3,7 @@
 import { AnchorProvider, Idl, Program } from "@coral-xyz/anchor";
 import { Connection, Keypair, PublicKey, Transaction } from "@solana/web3.js";
 import { AccountLayout } from "@solana/spl-token";
-import idl from "../../../target/idl/mandate.json";
+import idl from "../../../sdk/idl/mandate.json";
 import {
   MANDATE_PROGRAM_ID,
   MandateClient,

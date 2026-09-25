@@ -3,7 +3,7 @@
   "private": true,
   "license": "Apache-2.0",
   "scripts": {
-    "build": "anchor build",
+    "build": "anchor build && cp target/idl/mandate.json sdk/idl/mandate.json",
     "test": "ts-mocha -p ./tsconfig.json -t 1000000 'tests/**/*.test.ts'",
     "test:unit": "cargo test -p mandate --lib"
   },

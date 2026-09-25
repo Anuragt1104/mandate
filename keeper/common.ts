@@ -20,7 +20,7 @@ export function loadKeypair(p = process.env.KEYPAIR ?? path.join(os.homedir(), "
 }
 
 export function makeClient(connection: Connection, wallet: Keypair): MandateClient {
-  const idl = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../target/idl/mandate.json"), "utf8")) as Idl;
+  const idl = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../sdk/idl/mandate.json"), "utf8")) as Idl;
   const provider = new AnchorProvider(connection, new Wallet(wallet), { commitment: "confirmed" });
   return new MandateClient(new Program(idl, provider));
 }
