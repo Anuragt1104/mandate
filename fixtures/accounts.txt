@@ -1,0 +1,13 @@
+# DLMM PresetParameter2 (seeds ["preset_parameter2", index u16 LE]); cft=0 cfm=0 variants
+5b2QSa3oY5DUzi4su8DdVTMVTS2gDe6P8YswfJq5BPqG  dlmm preset2 idx67  bin_step=10  base_factor=1000
+FxGzUdJZWPCe7LiZvB9YLDtyHBZcC8EBpG2Hhw9T8Yts  dlmm preset2 idx72  bin_step=25  base_factor=10000
+3PG2K7jaj4X2nFM69NJs2Lv98ZzRkAXJBku4bZQMhfpE  dlmm preset2 idx18  bin_step=80  base_factor=1250
+BHheFrz5LwtomeCufgoERctJyXi7tzwBjfnZdaHWGKdh  dlmm preset2 idx42  bin_step=100 base_factor=1000
+# DAMM v2 configs used by DBC migration (pool_creator_authority = DBC pool_authority)
+7F6dnUcRuyM2TwR8myT1dYypFXpPSxqwKNSFNkxyNESd  dammv2 config FixedBps25
+2nHK1kju6XjphBLbNxpM5XRGFj7p9U8vvNzyZiha1z6k  dammv2 config FixedBps30
+Hv8Lmzmnju6m7kcokVKvwqz7QPmdX9XfKjJsXz8RXcjp  dammv2 config FixedBps100
+2c4cYd4reUYVRAB9kUUkrq55VPyy2FNQ3FDL4o12JXmq  dammv2 config FixedBps200
+AkmQWebAwFvWk55wBoCr5D62C6VVDTzi84NJuD9H7cFD  dammv2 config FixedBps400
+DbCRBj8McvPYHJG1ukj8RE15h2dCNUdTAESG49XpQ44u  dammv2 config FixedBps600
+A8gMrEPJkacWkcb3DGwtJwTe16HktSEfvwtuDh2MCtck  dammv2 config Customizable (dynamic)

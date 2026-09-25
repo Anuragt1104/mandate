@@ -1,0 +1,24 @@
+[package]
+name = "mandate"
+version = "0.1.0"
+description = "Mandate: enforceable designated-market-maker contracts on Solana"
+edition = "2021"
+license = "Apache-2.0"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "mandate"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[dependencies]
+anchor-lang = { version = "0.32.1", features = ["init-if-needed"] }
+anchor-spl = "0.32.1"
+uint = { version = "0.10", default-features = false }
+bytemuck = { version = "1.20", features = ["derive", "min_const_generics"] }

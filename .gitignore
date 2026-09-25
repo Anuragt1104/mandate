@@ -1,0 +1,11 @@
+vendor/
+fixtures/programs/*.so
+scratch/
+node_modules/
+target/
+.anchor/
+test-ledger/
+.env*
+!.env.example
+.next/
+.DS_Store
