@@ -5,12 +5,13 @@ import { useRouter } from "next/navigation";
 import { BN } from "@coral-xyz/anchor";
 import { PublicKey } from "@solana/web3.js";
 import { createAssociatedTokenAccountIdempotentInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
-import { CircleAlert, FileText } from "lucide-react";
+import { CircleAlert } from "lucide-react";
 import { useMandateActions } from "@/lib/actions";
-import { CLUSTER, fetchTokenLabels, mintDecimals, type TokenLabel } from "@/lib/chain";
+import { CLUSTER, fetchSimBook, fetchTokenLabels, mintDecimals, type TokenLabel } from "@/lib/chain";
 import { pda } from "../../../../../sdk/src";
 import { WalletButton } from "@/components/wallet";
-import { InfoTip, duration, fmtFull } from "@/components/ui";
+import { InfoTip, fmtFull } from "@/components/ui";
+import { Schedule } from "@/components/sla";
 
 type Form = Record<string, string>;
 
@@ -71,7 +72,13 @@ export default function CreateMandate() {
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
   useEffect(() => {
-    fetch(CLUSTER === "localnet" ? "/demo.json" : `/demo.${CLUSTER}.json`).then((r) => (r.ok ? r.json() : null)).then((d) => {
+    // Prefill with a market from the test network: the simulator's first token, else the demo launch.
+    fetchSimBook().then(async (book) => {
+      const market = Object.values(book?.markets ?? {})[0] as any;
+      if (market && book.quoteMint) return { baseMint: market.mint, quoteMint: book.quoteMint, lbPair: market.lbPair, dammPool: market.dammPool };
+      const r = await fetch(CLUSTER === "localnet" ? "/demo.json" : `/demo.${CLUSTER}.json`);
+      return r.ok ? r.json() : null;
+    }).then((d) => {
       if (d) setForm((f) => ({ ...f, baseMint: d.baseMint, quoteMint: d.quoteMint, lbPair: d.lbPair, referencePool: d.dammPool }));
     }).catch(() => {});
   }, []);
@@ -115,7 +122,7 @@ export default function CreateMandate() {
     e.preventDefault();
     if (!valid) return;
     let key: PublicKey | null = null;
-    const ok = await run("Create mandate", async (c, me) => {
+    const ok = await run("Post SLA", async (c, me) => {
       const base = new PublicKey(form.baseMint);
       const quote = new PublicKey(form.quoteMint);
       const [bd, qd] = await Promise.all([mintDecimals(base), mintDecimals(quote)]);
@@ -138,25 +145,34 @@ export default function CreateMandate() {
           designatedMaker: form.designatedMaker ? new PublicKey(form.designatedMaker) : undefined,
         }),
       ];
-    }, { done: "Mandate created and funded. It is now open to market makers." });
+    }, { done: "SLA funded and posted. It is now open to market makers." });
     if (ok && key) router.push(`/app/mandate/${(key as PublicKey).toBase58()}`);
   }
 
   const f = { form, set };
+  const previewTerms = {
+    minDepthQuote: n("minDepth"), depthWindowBps: n("depthWindowBps"), maxSpreadBps: n("maxSpreadBps"), bandBps: n("bandBps"),
+    anchorTwapSecs: n("twapMinutes") * 60, anchorSpeedBpsPerMin: n("speedPctPerMin") * 100, feePerPeriod: n("feePerPeriod"),
+    periodSecs: n("periodMinutes") * 60, durationPeriods: n("durationPeriods") || 0, maxConsecutiveFailures: n("maxConsecutiveFailures"),
+    slashBps: n("slashPct") * 100, bondAmount: n("bond"), liquidityLockSecs: n("liquidityLockSecs"),
+  };
   return (
     <form onSubmit={submit}>
       <div className="page-head">
         <div>
-          <h1 className="h1">New mandate</h1>
-          <p className="sub">Fund a vault and set the terms. Any market maker, or the one you name, can accept by posting a bond. You can cancel and recover everything until someone accepts.</p>
+          <span className="eyebrow">New agreement</span>
+          <h1 className="h1">Draft an SLA</h1>
+          <p className="muted" style={{ margin: 0, maxWidth: "66ch" }}>
+            Set the service levels, fund the escrow and post it. Any market maker, or the one you name, can accept by posting a bond. Until someone does, you can cancel and recover everything.
+          </p>
         </div>
       </div>
 
-      <div className="grid-main">
+      <div className="draft">
         <div className="card">
           <div className="form-section">
-            <div className="form-section-head"><span className="h3">Start from a profile</span><span className="small muted">Every value can be adjusted below.</span></div>
-            <div className="presets" role="group" aria-label="Presets">
+            <div className="form-section-head"><span className="h3">Start from a profile</span><span className="small muted">Every value can be adjusted below; the agreement on the right updates as you type.</span></div>
+            <div className="presets" role="group" aria-label="Profiles">
               {PRESETS.map((p) => (
                 <button type="button" key={p.id} className="preset" aria-pressed={preset === p.id} onClick={() => applyPreset(p.id)}>
                   <b>{p.name}</b><span className="small muted">{p.blurb}</span>
@@ -166,31 +182,22 @@ export default function CreateMandate() {
           </div>
 
           <div className="form-section">
-            <div className="form-section-head"><span className="h3">Market</span><span className="small muted">The token&apos;s Meteora DLMM pair and the DAMM v2 pool it graduated into.{CLUSTER !== "mainnet" && " Prefilled with the devnet demo launch."}</span></div>
+            <div className="form-section-head"><span className="h3">Market</span><span className="small muted">Where the quotes live: the token&apos;s Meteora DLMM pair, and the pool it graduated into.{CLUSTER !== "mainnet" && " Prefilled with the test network's demo token."}</span></div>
             <div className="form-grid">
-              <Field id="baseMint" label="Base token mint" mono {...f} error={errors.baseMint} hint={labels[form.baseMint] ? labels[form.baseMint].name : undefined} />
-              <Field id="quoteMint" label="Quote token mint" mono {...f} error={errors.quoteMint} hint={labels[form.quoteMint] ? labels[form.quoteMint].name : undefined} />
-              <Field id="lbPair" label="Meteora DLMM pair" mono {...f} error={errors.lbPair} hint="Token X must be the base token." />
-              <Field id="referencePool" label="Graduated pool (DAMM v2)" mono {...f} error={errors.referencePool} hint="Shown next to the reference price for comparison." />
+              <Field id="baseMint" label="Token mint" mono {...f} error={errors.baseMint} hint={labels[form.baseMint] ? labels[form.baseMint].name : undefined} />
+              <Field id="quoteMint" label="Quote mint" mono {...f} error={errors.quoteMint} hint={labels[form.quoteMint] ? labels[form.quoteMint].name : undefined} />
+              <Field id="lbPair" label="DLMM pair" mono {...f} error={errors.lbPair} hint="Token X must be the token above." />
+              <Field id="referencePool" label="Graduated pool (DAMM v2)" mono {...f} error={errors.referencePool} hint="Shown beside the reference price for comparison." />
             </div>
           </div>
 
           <div className="form-section">
-            <div className="form-section-head"><span className="h3">Funding</span><span className="small muted">Deposited into a program-owned vault. Inventory can only be quoted, then returns to you.</span></div>
+            <div className="form-section-head"><span className="h3">Service levels</span><span className="small muted">What the maker must keep quoted, measured around the reference price.</span></div>
             <div className="form-grid">
-              <Field id="baseDeposit" label="Base inventory" suffix={baseSym} {...f} error={errors.baseDeposit} hint="Use 0 if the inventory comes from a Mandated launch." />
-              <Field id="quoteDeposit" label="Quote inventory" suffix={quoteSym} {...f} error={errors.quoteDeposit} />
-              <Field id="feeBudget" label="Fee budget" suffix={quoteSym} {...f} error={errors.feeBudget} hint="Pays the maker for compliant periods." />
-            </div>
-          </div>
-
-          <div className="form-section">
-            <div className="form-section-head"><span className="h3">Obligations</span><span className="small muted">What the maker must keep quoted, measured around the reference price.</span></div>
-            <div className="form-grid">
-              <Field id="minDepth" label="Min liquidity each side" suffix={quoteSym} {...f} error={errors.minDepth} info="Committed bids below the reference, and asks above it, each valued in the quote token." />
-              <Field id="depthWindowBps" label="Measured within" suffix="bps" {...f} info="Only liquidity within this distance of the reference counts toward the minimum." />
-              <Field id="maxSpreadBps" label="Max spread" suffix="bps" {...f} error={errors.maxSpreadBps} info="Measured at a size of 10% of the minimum liquidity, so dust quotes don't count." />
-              <Field id="bandBps" label="Allowed band" suffix="bps" {...f} info="The vault may only place liquidity within this distance of the reference." />
+              <Field id="minDepth" label="Depth each side" suffix={quoteSym} {...f} error={errors.minDepth} info="Committed bids below the reference, and asks above it, each valued in the quote token." />
+              <Field id="depthWindowBps" label="Measured within" suffix="bps" {...f} info="Only liquidity within this distance of the reference counts toward the depth." />
+              <Field id="maxSpreadBps" label="Max spread" suffix="bps" {...f} error={errors.maxSpreadBps} info="Measured at a size of 10% of the depth, so dust quotes don't count." />
+              <Field id="bandBps" label="Allowed band" suffix="bps" {...f} info="The escrow may only place liquidity within this distance of the reference." />
             </div>
           </div>
 
@@ -199,12 +206,12 @@ export default function CreateMandate() {
             <div className="form-grid">
               <Field id="twapMinutes" label="Time-weighted over" suffix="min" {...f} error={errors.twapMinutes} />
               <Field id="speedPctPerMin" label="Max speed" suffix="%/min" {...f} error={errors.speedPctPerMin} info="Lower is harder to manipulate; higher keeps up with fast markets." />
-              <Field id="liquidityLockSecs" label="Liquidity lock" suffix="sec" {...f} error={errors.liquidityLockSecs} info="Liquidity must stay deployed this long before it can be withdrawn." />
+              <Field id="liquidityLockSecs" label="Liquidity lock" suffix="sec" {...f} error={errors.liquidityLockSecs} info="Liquidity must stay placed this long before it can be withdrawn." />
             </div>
           </div>
 
           <div className="form-section">
-            <div className="form-section-head"><span className="h3">Economics and enforcement</span></div>
+            <div className="form-section-head"><span className="h3">Fees, term and remedies</span></div>
             <div className="form-grid">
               <Field id="feePerPeriod" label="Fee per compliant period" suffix={quoteSym} {...f} error={errors.feePerPeriod} />
               <Field id="periodMinutes" label="Period length" suffix="min" {...f} error={errors.periodMinutes} />
@@ -215,36 +222,35 @@ export default function CreateMandate() {
               <Field id="designatedMaker" label="Designated maker (optional)" mono {...f} error={errors.designatedMaker} hint="Leave empty to let any maker accept." />
             </div>
           </div>
+
+          <div className="form-section">
+            <div className="form-section-head"><span className="h3">Escrow</span><span className="small muted">Deposited into vaults the SLA owns. Inventory can only be quoted on the pair, then returns to you.</span></div>
+            <div className="form-grid">
+              <Field id="baseDeposit" label="Token inventory" suffix={baseSym} {...f} error={errors.baseDeposit} hint="Use 0 when a Mandated launch routes the inventory in." />
+              <Field id="quoteDeposit" label="Quote inventory" suffix={quoteSym} {...f} error={errors.quoteDeposit} />
+              <Field id="feeBudget" label="Fee budget" suffix={quoteSym} {...f} error={errors.feeBudget} hint="Pays the maker for compliant periods." />
+            </div>
+          </div>
         </div>
 
-        <div className="stack sticky">
-          <div className="card">
-            <div className="card-head"><span className="h3"><FileText style={{ width: 16, height: 16, color: "var(--muted)" }} />Term sheet</span><span className="xs muted">Preview</span></div>
-            <div className="card-body" style={{ display: "grid", gap: 14, fontSize: 14, lineHeight: 1.55 }}>
-              <p style={{ margin: 0 }}>
-                The maker keeps at least <b>{fmtFull(n("minDepth"))} {quoteSym}</b> of bids within {n("depthWindowBps") / 100}% below the reference price and the same of asks above it, quoted within <b>{n("maxSpreadBps")} bps</b>.
-              </p>
-              <p style={{ margin: 0 }}>
-                Each compliant <b>{duration(n("periodMinutes") * 60)}</b> period pays <b>{fmtFull(n("feePerPeriod"))} {quoteSym}</b>, for {n("durationPeriods")} periods ({duration(n("periodMinutes") * 60 * n("durationPeriods"))}).
-              </p>
-              <p style={{ margin: 0 }}>
-                <b>{n("maxConsecutiveFailures")}</b> failed periods in a row slash <b>{n("slashPct")}%</b> of the {fmtFull(n("bond"))} {quoteSym} bond and end the mandate.
-              </p>
-              <dl className="dl">
-                <dt>Maximum payout</dt><dd>{fmtFull(maxPayout)} {quoteSym}</dd>
-                <dt>Fee budget covers</dt><dd style={{ color: underfunded ? "var(--warn)" : undefined }}>{isFinite(budgetPeriods) ? `${Math.min(budgetPeriods, n("durationPeriods"))} of ${n("durationPeriods")} periods` : "all periods"}</dd>
-                <dt>Inventory</dt><dd>{fmtFull(n("baseDeposit"))} {baseSym} · {fmtFull(n("quoteDeposit"))} {quoteSym}</dd>
-              </dl>
-              {underfunded && (
-                <div className="notice"><CircleAlert />The fee budget runs out after {budgetPeriods} periods. Makers may not accept, or you can top it up later.</div>
-              )}
+        <div className="draft-preview">
+          <div className="paper">
+            <div className="paper-head">
+              <span className="eyebrow">Liquidity service-level agreement</span>
+              <span className="paper-title">{baseSym}/{quoteSym}</span>
+              <span className="small muted">Between you, as issuer, and {form.designatedMaker && isKey(form.designatedMaker) ? `maker ${form.designatedMaker.slice(0, 4)}…${form.designatedMaker.slice(-4)}` : "the first maker to accept"}.</span>
             </div>
-            <div className="card-foot" style={{ display: "grid", gap: 8 }}>
-              {me ? (
-                <button className="btn btn-primary btn-block" type="submit" disabled={!!busy || !valid}>{busy ? "Creating…" : "Create and fund mandate"}</button>
-              ) : <WalletButton />}
-              <span className="xs muted">{valid ? "You sign one transaction. Funds move into the mandate's vault." : "Fix the highlighted fields to continue."}</span>
-            </div>
+            <Schedule t={previewTerms} quote={quoteSym} decimals={0} compact />
+            <dl className="dl" style={{ paddingTop: 14, borderTop: "1px solid var(--line)" }}>
+              <dt>Maximum payout</dt><dd>{fmtFull(maxPayout)} {quoteSym}</dd>
+              <dt>Fee budget covers</dt><dd style={{ color: underfunded ? "var(--warn)" : undefined }}>{isFinite(budgetPeriods) ? `${Math.min(budgetPeriods, n("durationPeriods")).toLocaleString("en-US")} of ${n("durationPeriods").toLocaleString("en-US")} periods` : "all periods"}</dd>
+              <dt>Escrowed inventory</dt><dd>{fmtFull(n("baseDeposit"))} {baseSym} · {fmtFull(n("quoteDeposit"))} {quoteSym}</dd>
+            </dl>
+            {underfunded && <div className="notice warn"><CircleAlert />The fee budget runs out after {budgetPeriods.toLocaleString("en-US")} periods. Makers may pass on it, or you can top it up later.</div>}
+            {me ? (
+              <button className="btn btn-primary btn-lg btn-block" type="submit" disabled={!!busy || !valid}>{busy ? "Posting…" : "Fund and post the SLA"}</button>
+            ) : <WalletButton />}
+            <span className="xs muted" style={{ textAlign: "center" }}>{valid ? "One transaction. Funds move into the SLA's escrow." : "Fix the highlighted fields to continue."}</span>
           </div>
         </div>
       </div>

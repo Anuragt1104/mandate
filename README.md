@@ -1,9 +1,12 @@
 # Mandate
 
-Designated market making, enforced on-chain.
+Liquidity SLAs for token markets: uptime, enforced on Solana.
 
 **Live app (Solana devnet):** https://mandate-lac-rho.vercel.app. The program is deployed on
-devnet, with a DBC-launched token whose mandate is actively quoted and scored.
+devnet, where a simulated test network (a launchpad, token teams, three market makers of
+different quality, traders, an attacker and a watchtower) runs on real contracts around the
+clock. Every SLA gets a public status page: uptime per obligation, incidents, and a live feed
+decoded from the program's own events.
 
 Token issuers pay market makers to keep their markets liquid, but those contracts are
 private, and nobody can check whether the maker delivered. Mandate turns the contract into a
@@ -28,9 +31,9 @@ under contract.
 | `programs/mandate` | The Anchor program (Rust). `anchor.rs` has the reference price, `scoring.rs` the measurement, and `instructions/` has one file per area |
 | `sdk/src` | TypeScript client: PDAs, instruction builders, decoders, and a mirror of the reference-price logic |
 | `tests` | Integration tests on LiteSVM with the **mainnet** DLMM, DAMM v2, DBC and Token Metadata binaries |
-| `keeper` | Bots: `cranker` (random-time snapshots, finalize, unwind and settle), `maker` (reference market maker), `trader` (random flow for demos) |
-| `scripts` | `localnet.sh` (validator with Meteora programs), `demo.ts` (full launch-to-mandate flow), `status.ts`, `liquidity-study.ts`, `fetch-programs.sh` |
-| `app` | Next.js web app: mandate board, mandate page (compliance tape, checks, depth ladder, role-aware actions), makers, create, Mandated DBC launch, liquidity study |
+| `keeper` | `agents.ts` (maker, trader, watchtower and attacker behaviours) and single-purpose bots built on it: `cranker` (random-time checks, finalize, unwind and settle), `maker`, `trader` |
+| `scripts` | `simulate.ts` (the simulated test network and replayable scenes), `demo.ts` (one launch-to-SLA flow), `lib/launch.ts` (Mandated DBC launch helpers), `localnet.sh`, `status.ts`, `liquidity-study.ts`, `fetch-programs.sh` |
+| `app` | Next.js web app: network status board, SLA status pages (per-obligation uptime, incidents, committed book, routability, live activity, role-aware actions), maker ratings, Draft an SLA, Mandated DBC launch, liquidity study |
 | `docs` | `security.md` (threat model and review findings), `spec/integration.md` (verified Meteora layouts and behaviour) |
 | `tools` | Layout calculator and mainnet layout verifier for the Meteora accounts |
 
@@ -165,6 +168,42 @@ Off localnet the demo writes `app/public/demo.devnet.json` and keeps helper keys
 `.keys/devnet/`, reusing them on later runs. Point the bots at devnet with
 `RPC_URL=https://api.devnet.solana.com`, and build the app with
 `NEXT_PUBLIC_RPC_URL=https://api.devnet.solana.com NEXT_PUBLIC_CLUSTER=devnet`.
+
+## The test network
+
+`scripts/simulate.ts` stages a small economy on real contracts so the product can be watched
+working. Every participant is fictional, marked **SIM** in the app, and listed in
+`app/public/personas.<cluster>.json`; their transactions are real.
+
+- **Nova Launchpad** launches ORBT and KITE on its Mandated DBC config; each graduates with an
+  SLA funded from its leftover supply.
+- **Helios Markets** quotes ORBT diligently. **Lazy Capital** takes KITE, quotes for a few
+  minutes, then pulls its liquidity: checks fail, its bond is slashed, the watchtower settles.
+  **Kite Protocol** re-tenders from its treasury and **Tidewater Trading** takes the offer.
+- **Priya, Marco and Jun** trade small sizes, **Ferro Capital** trades blocks, **Mallory**
+  buys out the asks and forces a check in the same transaction (it still passes), and the
+  **Watchtower** checks every live SLA at random times.
+
+```bash
+npx tsx scripts/simulate.ts setup
+```
+
+```bash
+npx tsx scripts/simulate.ts run
+```
+
+On devnet prefix both with `CLUSTER=devnet RPC_URL=https://api.devnet.solana.com
+DLMM_PRESET=4vP4DFDJLRz85NBCfJALYPNdieWwzQSstrUuTms1gekn`. Periods are one minute, so the
+whole story plays out in about fifteen minutes. With `run` going, a scene replays a moment on
+demand, for recording:
+
+```bash
+npx tsx scripts/simulate.ts scene walkaway 3
+```
+
+`walkaway [minutes]` posts a fresh KITE SLA that Lazy Capital quotes and then abandons (breach
+and settlement follow in about four minutes); `sandwich` and `whale` run Mallory's attack and
+a block trade on ORBT immediately.
 
 ## Program
 

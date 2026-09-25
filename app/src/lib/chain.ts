@@ -26,7 +26,15 @@ let _conn: Connection | null = null;
 export function connection(): Connection {
   // No automatic retries on 429: usePoll backs off instead, which avoids retry storms
   // against rate-limited public endpoints.
-  if (!_conn) _conn = new Connection(RPC_URL, { commitment: "confirmed", disableRetryOnRateLimit: true });
+  // Requests time out after 15 s: public devnet occasionally holds a connection open without
+  // answering, which would otherwise stall polling indefinitely.
+  if (!_conn) {
+    _conn = new Connection(RPC_URL, {
+      commitment: "confirmed",
+      disableRetryOnRateLimit: true,
+      fetch: (input: any, init?: any) => fetch(input, { ...init, signal: AbortSignal.timeout(15_000) }),
+    });
+  }
   return _conn;
 }
 
@@ -78,8 +86,25 @@ function readBorshString(d: Uint8Array, o: number): [string, number] {
   return [new TextDecoder().decode(bytes).replace(/\0/g, "").trim(), o + 4 + len];
 }
 
+/**
+ * The test network's participant book (written by scripts/simulate.ts). Besides persona
+ * names it labels the test quote token, which has no metadata account.
+ */
+let simBook: Promise<any> | null = null;
+export function fetchSimBook(): Promise<any> {
+  simBook ??= fetch(CLUSTER === "localnet" ? "/personas.json" : `/personas.${CLUSTER}.json`)
+    .then((r): Promise<any> => (r.ok ? r.json() : Promise.resolve({})))
+    .catch(() => ({}))
+    .then((b: any) => {
+      for (const [mint, label] of Object.entries((b?.tokens ?? {}) as Record<string, TokenLabel>)) labelCache.set(mint, label);
+      return b;
+    });
+  return simBook;
+}
+
 /** Symbol and name for each mint; falls back to a shortened address. */
 export async function fetchTokenLabels(mints: PublicKey[]): Promise<Record<string, TokenLabel>> {
+  await fetchSimBook();
   const missing = [...new Set(mints.map((m) => m.toBase58()))].filter((m) => !labelCache.has(m));
   if (missing.length) {
     const pdas = missing.map(

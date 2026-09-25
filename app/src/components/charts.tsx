@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { BookBin } from "@/lib/chain";
-import { Tip, fmt, fmtPrice } from "./ui";
+import { fmt, fmtPrice } from "./ui";
 
 // ---------------------------------------------------------------- liquidity chart
 
@@ -22,6 +22,7 @@ export function LiquidityChart({
   baseSymbol = "base",
   height = 230,
   maxBins = 64,
+  empty,
 }: {
   bins: BookBin[];
   refBin: number;
@@ -33,6 +34,7 @@ export function LiquidityChart({
   baseSymbol?: string;
   height?: number;
   maxBins?: number;
+  empty?: { title: string; body: string };
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const byId = useMemo(() => new Map(bins.map((b) => [b.binId, b])), [bins]);
@@ -70,8 +72,8 @@ export function LiquidityChart({
   if (!withLiq.length) {
     return (
       <div className="empty-state" style={{ height }}>
-        <span className="h3" style={{ color: "var(--ink)" }}>No liquidity deployed yet</span>
-        <span className="small">The market maker has not placed the vault&apos;s inventory on the pair.</span>
+        <span className="h3" style={{ color: "var(--ink)" }}>{empty?.title ?? "No liquidity placed yet"}</span>
+        <span className="small">{empty?.body ?? "The market maker has not placed the escrow's inventory on the pair."}</span>
       </div>
     );
   }
@@ -107,7 +109,7 @@ export function LiquidityChart({
         {/* baseline */}
         <line x1={0} x2={W} y1={padT + plotH} y2={padT + plotH} stroke="var(--line-2)" strokeWidth={1} vectorEffect="non-scaling-stroke" />
         {/* reference line */}
-        <line x1={refX} x2={refX} y1={padT - 14} y2={padT + plotH} stroke="var(--brand)" strokeWidth={1.6} strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
+        <line x1={refX} x2={refX} y1={padT - 14} y2={padT + plotH} stroke="var(--ink)" strokeWidth={1.4} strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
         {/* hover targets */}
         {ids.map((id) => (
           <rect key={`h${id}`} x={x(id)} y={0} width={slot} height={H - padB} fill="transparent" onMouseEnter={() => setHover(id)} />
@@ -115,7 +117,7 @@ export function LiquidityChart({
       </svg>
       {/* labels drawn in HTML so they stay crisp at any width */}
       <div style={{ position: "absolute", left: `${(refX / W) * 100}%`, top: 0, transform: "translateX(-50%)", pointerEvents: "none" }}>
-        <span className="tag" style={{ background: "var(--brand)", color: "var(--brand-ink)", height: 20, fontSize: 11.5 }}>
+        <span className="tag" style={{ background: "var(--ink)", color: "var(--surface)", height: 20, fontSize: 11 }}>
           Reference {fmtPrice(refUi)}
         </span>
       </div>
@@ -156,92 +158,7 @@ export function LiquidityLegend({ quoteSymbol, windowBps }: { quoteSymbol: strin
   );
 }
 
-// ---------------------------------------------------------------- compliance tape
-
-export interface PeriodEntry {
-  period: number;
-  status: number; // 1 ok, 2 failed, 3 unobserved
-  snapshots: number;
-  worstSpreadBps: number;
-  minBidDepth: any;
-  minAskDepth: any;
-}
-
-const STATUS_TEXT: Record<number, string> = { 1: "Compliant", 2: "Failed", 3: "Not observed" };
-
-/** One cell per scoring period, like an uptime history on a status page. */
-export function ComplianceTape({
-  entries,
-  live,
-  total,
-  cells = 60,
-  size = "md",
-  quoteDecimals = 6,
-  quoteSymbol = "",
-}: {
-  entries: PeriodEntry[];
-  live?: { period: number; failed: boolean; snapshots: number } | null;
-  total?: number;
-  cells?: number;
-  size?: "sm" | "md" | "lg";
-  quoteDecimals?: number;
-  quoteSymbol?: string;
-}) {
-  const shown = entries.slice(-Math.max(0, cells - (live ? 1 : 0)));
-  const used = shown.length + (live ? 1 : 0);
-  const lastPeriod = live ? live.period : (shown.at(-1)?.period ?? -1);
-  const remaining = total ? Math.max(0, total - lastPeriod - 1) : 0;
-  const future = Math.min(remaining, Math.max(0, cells - used));
-  const cls = (s: number) => (s === 1 ? "ok" : s === 2 ? "failed" : s === 3 ? "unobserved" : "");
-  const q = (v: any) => Number(v?.toString?.() ?? v) / 10 ** quoteDecimals;
-  const withTips = size !== "sm";
-
-  const cell = (e: PeriodEntry) => {
-    const el = <span className={`tape-cell ${cls(e.status)}`} tabIndex={withTips ? 0 : -1} aria-label={`Period ${e.period + 1}: ${STATUS_TEXT[e.status]}`} />;
-    if (!withTips) return <span key={e.period} className={`tape-cell ${cls(e.status)}`} />;
-    return (
-      <Tip key={e.period} className="tape-cell-wrap" content={
-        <span style={{ display: "grid", gap: 2 }}>
-          <b>Period {e.period + 1} · {STATUS_TEXT[e.status]}</b>
-          {e.status === 3 ? (
-            <span>Nobody checked the quotes this period, so it is neither paid nor failed.</span>
-          ) : (
-            <>
-              <span>{e.snapshots} check{e.snapshots === 1 ? "" : "s"}</span>
-              <span>Widest spread {e.worstSpreadBps === 65535 ? "one side empty" : `${e.worstSpreadBps} bps`}</span>
-              <span>Lowest bids {fmt(q(e.minBidDepth))} {quoteSymbol} · asks {fmt(q(e.minAskDepth))} {quoteSymbol}</span>
-            </>
-          )}
-        </span>
-      }>
-        {el}
-      </Tip>
-    );
-  };
-
-  return (
-    <div className={`tape ${size}`} role="img" aria-label={`${entries.filter((e) => e.status === 1).length} compliant, ${entries.filter((e) => e.status === 2).length} failed, ${entries.filter((e) => e.status === 3).length} unobserved periods`}>
-      {shown.map(cell)}
-      {live && (withTips ? (
-        <Tip className="tape-cell-wrap" content={<span style={{ display: "grid", gap: 2 }}><b>Period {live.period + 1} · In progress</b><span>{live.snapshots} check{live.snapshots === 1 ? "" : "s"} so far{live.failed ? ", at least one failed" : ", all passed"}</span></span>}>
-          <span className={`tape-cell live ${live.failed ? "bad" : ""}`} tabIndex={0} aria-label="Current period" />
-        </Tip>
-      ) : <span className={`tape-cell live ${live.failed ? "bad" : ""}`} />)}
-      {Array.from({ length: future }).map((_, i) => <span key={`f${i}`} className="tape-cell future" />)}
-    </div>
-  );
-}
-
-export function TapeLegend() {
-  return (
-    <div className="legend">
-      <span><i style={{ background: "var(--pass)" }} />Compliant</span>
-      <span><i style={{ background: "var(--fail)" }} />Failed</span>
-      <span><i style={{ background: "var(--idle)" }} />Not observed</span>
-      <span><i style={{ background: "repeating-linear-gradient(135deg, var(--pass) 0 2px, transparent 2px 4px)", boxShadow: "inset 0 0 0 1px var(--pass)" }} />In progress</span>
-    </div>
-  );
-}
+export type { PeriodEntry } from "@/lib/sla";
 
 // ---------------------------------------------------------------- horizontal histogram
 

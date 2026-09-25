@@ -95,7 +95,7 @@ export function WalletButton({ size = "md" }: { size?: "sm" | "md" }) {
               {faucet === "failed" && (
                 <div className="note">
                   The public faucet is rate-limited right now. Copy your address and request SOL at{" "}
-                  <a href="https://faucet.solana.com" target="_blank" rel="noreferrer" style={{ display: "inline", padding: 0, color: "var(--brand)" }}>faucet.solana.com</a>.
+                  <a href="https://faucet.solana.com" target="_blank" rel="noreferrer" style={{ display: "inline", padding: 0, color: "var(--ink)", textDecoration: "underline" }}>faucet.solana.com</a>.
                 </div>
               )}
             </>

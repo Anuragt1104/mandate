@@ -13,6 +13,7 @@ export function fmt(n: number, digits = 2) {
   if (a >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
   if (a >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
   if (a >= 1e4) return `${(n / 1e3).toFixed(1)}K`;
+  if (a >= 100) return n.toLocaleString("en-US", { maximumFractionDigits: 0 });
   return n.toLocaleString("en-US", { maximumFractionDigits: digits });
 }
 
@@ -30,6 +31,7 @@ export function fmtPrice(p: number) {
 
 export function duration(secs: number) {
   secs = Math.max(0, Math.round(secs));
+  if (secs % 60 === 0 && secs < 5400) return `${secs / 60} min`;
   if (secs < 90) return `${secs}s`;
   if (secs < 5400) return `${Math.round(secs / 60)} min`;
   if (secs < 172800) return `${Math.round(secs / 3600)} h`;
@@ -64,20 +66,21 @@ function hash(s: string) {
 
 // ---------------------------------------------------------------- status
 
-export type StatusName = "Open" | "Active" | "Breached" | "Expired" | "Settled" | "Cancelled";
+export type { StatusName } from "@/lib/sla";
+import type { StatusName } from "@/lib/sla";
 
-export const STATUS_META: Record<StatusName, { label: string; cls: string; hint: string }> = {
-  Open: { label: "Open to makers", cls: "open", hint: "Funded by the issuer and waiting for a market maker to accept." },
-  Active: { label: "Active", cls: "active", hint: "A maker has posted its bond and is being scored every period." },
-  Breached: { label: "Breached", cls: "breached", hint: "The maker failed too many periods in a row and was slashed." },
-  Expired: { label: "Term ended", cls: "ended", hint: "The term ran to the end. Funds can be unwound and settled." },
-  Settled: { label: "Settled", cls: "ended", hint: "All funds have been distributed." },
-  Cancelled: { label: "Cancelled", cls: "ended", hint: "The issuer cancelled before a maker accepted." },
+export const STATUS_META: Record<StatusName, { label: string; tone: "up" | "warn" | "down" | "open" | "ended"; hint: string }> = {
+  Open: { label: "Open", tone: "open", hint: "Funded by the issuer and waiting for a market maker to accept." },
+  Active: { label: "Live", tone: "up", hint: "A maker has posted its bond and is being scored every period." },
+  Breached: { label: "Breached", tone: "down", hint: "The maker failed too many periods in a row and was slashed." },
+  Expired: { label: "Term complete", tone: "ended", hint: "The term ran to the end. Funds can be unwound and settled." },
+  Settled: { label: "Settled", tone: "ended", hint: "All funds have been distributed." },
+  Cancelled: { label: "Cancelled", tone: "ended", hint: "The issuer cancelled before a maker accepted." },
 };
 
 export function StatusPill({ status }: { status: StatusName }) {
   const meta = STATUS_META[status] ?? STATUS_META.Open;
-  return <span className={`pill ${meta.cls}`}>{meta.label}</span>;
+  return <span className={`chip ${meta.tone}`}><span className="dot" />{meta.label}</span>;
 }
 
 export function StatusIcon({ pass }: { pass: boolean | null }) {
@@ -135,9 +138,9 @@ export function Identicon({ address, size = 22 }: { address: PublicKey | string;
 export function TokenGlyph({ mint, label, size = 26 }: { mint: PublicKey | string; label?: TokenLabel; size?: number }) {
   const s = typeof mint === "string" ? mint : mint.toBase58();
   const symbol = label?.symbol ?? s.slice(0, 2);
-  const known: Record<string, string> = { USDC: "#2775ca", SOL: "#7c5cff" };
+  const known: Record<string, string> = { USDC: "#2775ca", SOL: "#6a4fe0" };
   const hue = hash(s) % 360;
-  const bg = known[symbol] ?? `linear-gradient(140deg, hsl(${hue} 70% 52%), hsl(${(hue + 40) % 360} 70% 38%))`;
+  const bg = known[symbol] ?? `hsl(${hue} 38% 38%)`;
   return (
     <span className="token-glyph" style={{ width: size, height: size, background: bg, fontSize: Math.round(size * 0.36) }} aria-hidden="true">
       {symbol.slice(0, symbol.length > 3 ? 1 : 2).toUpperCase()}

@@ -1,23 +1,22 @@
 /**
- * The Mandate mark: an ask above and a bid below, held apart by the reference line.
- * It is the product's rule drawn as a logo: asks at or above, bids at or below.
+ * The Mandate mark: four scored periods on an ink tile, the last one live. It is the
+ * product drawn small: liquidity measured period after period.
  */
-export function Mark({ size = 26 }: { size?: number }) {
+export function Mark({ size = 24 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 26 26" aria-hidden="true" style={{ display: "block", flex: "none" }}>
-      <rect width="26" height="26" rx="7" fill="var(--ink)" />
-      <rect x="11" y="6" width="9" height="4.2" rx="1.4" fill="var(--surface)" />
-      <rect x="4.5" y="12.2" width="17" height="1.6" rx="0.8" fill="var(--brand)" />
-      <rect x="6" y="15.8" width="9" height="4.2" rx="1.4" fill="var(--surface)" />
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ display: "block", flex: "none" }}>
+      <rect width="24" height="24" rx="6.5" fill="var(--ink)" />
+      {[5.5, 9.5, 13.5].map((x) => <rect key={x} x={x} y="6" width="2.6" height="12" rx="1.1" fill="var(--surface)" />)}
+      <rect x="17.5" y="6" width="2.6" height="12" rx="1.1" fill="var(--up)" />
     </svg>
   );
 }
 
-export function Wordmark({ size = 26 }: { size?: number }) {
+export function Wordmark({ size = 24 }: { size?: number }) {
   return (
     <span className="brand">
       <Mark size={size} />
-      <span>MANDATE</span>
+      <span>Mandate</span>
     </span>
   );
 }

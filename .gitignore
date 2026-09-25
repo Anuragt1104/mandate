@@ -14,3 +14,5 @@ tests/idl/*.json
 .keys/
 app/public/demo.json
 *.tsbuildinfo
+
+app/public/personas.json

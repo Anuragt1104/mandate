@@ -15,6 +15,28 @@ import { MANDATE_PROGRAM_ID, MandateClient, anchorState, decodeDammPool, decodeL
 
 export const RPC_URL = process.env.RPC_URL ?? "http://127.0.0.1:8899";
 
+/**
+ * fetch for long-running bots on public RPC. Public devnet sometimes accepts a connection and
+ * never answers, so each request gets 10 s before it is retried on a fresh connection; rate
+ * limits (429), server errors (5xx) and network errors back off and retry too.
+ */
+export const resilientFetch = async (input: any, init?: any): Promise<Response> => {
+  for (let i = 0; ; i++) {
+    try {
+      const res = await fetch(input, { ...init, signal: AbortSignal.timeout(10_000) });
+      if (res.status !== 429 && res.status < 500) return res;
+      if (i >= 11) return res;
+    } catch (e) {
+      if (i >= 11) throw e;
+    }
+    await sleep(Math.min(8_000, 500 * 2 ** i));
+  }
+};
+
+export function makeConnection(url = RPC_URL): Connection {
+  return new Connection(url, { commitment: "confirmed", fetch: resilientFetch as any, disableRetryOnRateLimit: true });
+}
+
 export function loadKeypair(p = process.env.KEYPAIR ?? path.join(os.homedir(), ".config/solana/id.json")): Keypair {
   return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(fs.readFileSync(p, "utf8"))));
 }

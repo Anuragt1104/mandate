@@ -21,12 +21,22 @@ export const SECURITY_URL = `${REPO_URL}/blob/main/docs/security.md`;
 export const PROGRAM_ID = "3YetFVe4F6MuYaHH7pAmTCZjtMnunQT1ufMdAY8rYFrn";
 
 const APP_NAV = [
-  { href: "/app", label: "Mandates", exact: true },
+  { href: "/app", label: "Network", match: (p: string) => p === "/app" || p.startsWith("/app/mandate") },
   { href: "/app/makers", label: "Makers" },
-  { href: "/app/create", label: "New mandate" },
+  { href: "/app/create", label: "Draft an SLA" },
   { href: "/app/launch", label: "Launchpads" },
   { href: "/research", label: "Research" },
 ];
+
+export function ClusterBadge() {
+  if (CLUSTER === "mainnet") return null;
+  return (
+    <span className="cluster-badge hide-sm" title={`Reading Solana ${CLUSTER}`}>
+      <span className="live-dot" />
+      {CLUSTER}
+    </span>
+  );
+}
 
 export function AppNav() {
   const path = usePathname();
@@ -34,27 +44,15 @@ export function AppNav() {
   return (
     <header className="topbar">
       <div className="container topbar-inner">
-        <Link href="/" aria-label="Mandate home" className="row" style={{ gap: 8 }}>
-          <Wordmark />
-          <span className="brand-tag hide-sm">App</span>
-        </Link>
+        <Link href="/" aria-label="Mandate home"><Wordmark /></Link>
         <nav className={`nav ${open ? "open" : ""}`} aria-label="App" onClick={() => setOpen(false)}>
           {APP_NAV.map((n) => {
-            const current = n.exact ? path === n.href || path.startsWith("/app/mandate") : path.startsWith(n.href);
-            return (
-              <Link key={n.href} href={n.href} aria-current={current ? "page" : undefined}>
-                {n.label}
-              </Link>
-            );
+            const current = n.match ? n.match(path) : path.startsWith(n.href);
+            return <Link key={n.href} href={n.href} aria-current={current ? "page" : undefined}>{n.label}</Link>;
           })}
         </nav>
         <div className="topbar-right">
-          {CLUSTER !== "mainnet" && (
-            <span className="cluster-badge hide-sm" title={`Connected to Solana ${CLUSTER}`}>
-              <span className="live-dot" />
-              {CLUSTER === "devnet" ? "Devnet" : CLUSTER === "localnet" ? "Localnet" : CLUSTER}
-            </span>
-          )}
+          <ClusterBadge />
           <WalletButton size="sm" />
           <button className="icon-btn menu-toggle" onClick={() => setOpen((o) => !o)} aria-label="Menu" aria-expanded={open} style={{ width: 32, height: 32 }}>
             <Menu />
@@ -72,19 +70,19 @@ export function MarketingNav() {
       <div className="container topbar-inner">
         <Link href="/" aria-label="Mandate home"><Wordmark /></Link>
         <nav className={`nav ${open ? "open" : ""}`} aria-label="Main" onClick={() => setOpen(false)}>
-          <a href="/#how">How it works</a>
-          <a href="/#who">Who it&apos;s for</a>
-          <a href="/#guarantees">Guarantees</a>
+          <Link href="/app">Network</Link>
+          <a href="/#contract">The SLA</a>
+          <a href="/#incidents">Attacks it survives</a>
+          <Link href="/app/makers">Makers</Link>
           <Link href="/research">Research</Link>
-          <a href={REPO_URL} target="_blank" rel="noreferrer">Docs</a>
         </nav>
         <div className="topbar-right">
           <a className="btn btn-ghost btn-sm hide-sm" href={REPO_URL} target="_blank" rel="noreferrer" aria-label="Source on GitHub">
             <GithubMark />
-            GitHub
+            Source
           </a>
           <Link className="btn btn-primary btn-sm" href="/app">
-            Open app
+            Open the network
             <ArrowRight />
           </Link>
           <button className="icon-btn menu-toggle" onClick={() => setOpen((o) => !o)} aria-label="Menu" aria-expanded={open} style={{ width: 32, height: 32 }}>
@@ -100,32 +98,21 @@ export function Footer() {
   return (
     <footer className="footer">
       <div className="container footer-grid">
-        <div style={{ display: "grid", gap: 12, maxWidth: 360 }}>
+        <div style={{ display: "grid", gap: 10, maxWidth: 380 }}>
           <Wordmark size={22} />
-          <span>Market-making contracts enforced on Solana. Built on Meteora DLMM and the Dynamic Bonding Curve.</span>
+          <span className="small muted">Liquidity SLAs for token markets, enforced on Solana. Quotes live on Meteora DLMM pairs; the agreement, the checks and the money live in the Mandate program.</span>
           <span className="mono xs faint">Program {PROGRAM_ID.slice(0, 6)}…{PROGRAM_ID.slice(-6)} · Solana {CLUSTER}</span>
         </div>
-        <div className="footer-links">
-          <div>
-            <b>Product</b>
-            <Link href="/app">Mandates</Link>
-            <Link href="/app/makers">Maker records</Link>
-            <Link href="/app/create">Create a mandate</Link>
-            <Link href="/app/launch">For launchpads</Link>
-          </div>
-          <div>
-            <b>Learn</b>
-            <a href="/#how">How it works</a>
-            <Link href="/research">Liquidity research</Link>
-            <a href={SECURITY_URL} target="_blank" rel="noreferrer">Security model</a>
-          </div>
-          <div>
-            <b>Build</b>
-            <a href={REPO_URL} target="_blank" rel="noreferrer">GitHub</a>
-            <a href={`${REPO_URL}#readme`} target="_blank" rel="noreferrer">Run it locally</a>
-            <a href={`https://explorer.solana.com/address/${PROGRAM_ID}?cluster=devnet`} target="_blank" rel="noreferrer">Program on Explorer</a>
-          </div>
-        </div>
+        <nav className="footer-links" aria-label="Footer">
+          <Link href="/app">Network</Link>
+          <Link href="/app/makers">Maker ratings</Link>
+          <Link href="/app/create">Draft an SLA</Link>
+          <Link href="/app/launch">For launchpads</Link>
+          <Link href="/research">Research</Link>
+          <a href={SECURITY_URL} target="_blank" rel="noreferrer">Security model</a>
+          <a href={REPO_URL} target="_blank" rel="noreferrer">Source</a>
+          <a href={`https://explorer.solana.com/address/${PROGRAM_ID}?cluster=devnet`} target="_blank" rel="noreferrer">Program on Explorer</a>
+        </nav>
       </div>
     </footer>
   );

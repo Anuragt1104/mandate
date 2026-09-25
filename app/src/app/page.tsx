@@ -1,79 +1,76 @@
 import Link from "next/link";
-import { ArrowRight, Building2, Check, Crosshair, Eye, Layers, Lock, Rocket, Scale, ShieldCheck, Vault, Activity } from "lucide-react";
+import { ArrowRight, Check } from "lucide-react";
 import study from "../../public/study.json";
-import { Footer, GithubMark, MarketingNav, REPO_URL, SECURITY_URL } from "@/components/nav";
-import { LiveContract } from "@/components/live";
+import { Footer, MarketingNav, SECURITY_URL } from "@/components/nav";
+import { NetworkHero } from "@/components/live";
 import { HBars } from "@/components/charts";
-import { CommitArt, EscrowArt, SettleArt, VerifyArt } from "@/components/steps-art";
+import { Schedule } from "@/components/sla";
 
 const s = study.summary;
 const hist = study.histogram.all as { label: string; count: number }[];
 const pools = hist.reduce((a, b) => a + b.count, 0);
 const underCent = hist[0].count / pools;
 
-const STEPS = [
+/** The terms every SLA on the test network uses, shown as the example agreement. */
+const EXAMPLE_TERMS = {
+  minDepthQuote: 500e6, depthWindowBps: 200, maxSpreadBps: 100, bandBps: 500, anchorTwapSecs: 120, anchorSpeedBpsPerMin: 200,
+  feePerPeriod: 0.5e6, periodSecs: 60, durationPeriods: 10_080, maxConsecutiveFailures: 3, slashBps: 5_000, bondAmount: 250e6, liquidityLockSecs: 20,
+};
+
+const ENFORCEMENT = [
+  { title: "Committed depth, measured bin by bin", body: "A check values the maker's liquidity at each price bin's own price. Buying out the book right before a check moves value between the two tokens, not out of the book, so it can't fake a pass or force a fail." },
+  { title: "Checks nobody can schedule around", body: "Anyone can run a check at any moment, as often as they like. The maker can't know when the next one lands, so the only strategy is to stay in the market." },
+  { title: "A reference price you can't push", body: "Quotes are judged against a reference that follows the pair's time-weighted price at a capped speed. A price moved for one block doesn't move it." },
+  { title: "Escrow with one exit", body: "The issuer's inventory can only be quoted on the pair and returns at the end of the term. Fees stream out per compliant period; the bond is slashed on breach." },
+];
+
+const INCIDENTS = [
   {
-    title: "Escrow the inventory",
-    body: "The issuer or launchpad funds a program-owned vault with tokens and a fee budget. With a Mandated bonding-curve config, a token's unsold supply is routed there automatically at graduation.",
-    art: <EscrowArt />,
+    title: "Sandwiched check",
+    attempt: "Mallory buys out the maker's asks and forces a check in the same transaction, hoping the lopsided book flatters or fails the maker.",
+    outcome: "Check passed",
+    tone: "up",
+    why: "Liquidity is valued bin by bin at each bin's price, so the trade changes which token sits in a bin, not how much is committed.",
   },
   {
-    title: "A maker commits",
-    body: "A market maker accepts the terms and posts a bond. It can place the inventory only on the token's Meteora DLMM pair: bids at or below the reference price, asks at or above it.",
-    art: <CommitArt />,
+    title: "Maker walks away",
+    attempt: "Lazy Capital accepts KITE's SLA, quotes for a few minutes, then pulls every bin back into the vault.",
+    outcome: "Bond slashed",
+    tone: "down",
+    why: "Checks fail, three missed periods slash half its bond, the inventory goes back to the issuer, and KITE re-tenders to a new maker.",
   },
   {
-    title: "Anyone verifies",
-    body: "Anyone can check the maker's committed liquidity at any moment. The measurement values each price bin, so trading against the position cannot fake a pass or force a fail.",
-    art: <VerifyArt />,
+    title: "Reference nudge",
+    attempt: "Push the pair's price for a block so the maker's quotes look off-side, or drag the reference toward a price that suits you.",
+    outcome: "No effect",
+    tone: "up",
+    why: "The reference tracks the pair's TWAP at no more than 2% a minute and distrusts oracle time after an emptied bin.",
   },
   {
-    title: "Pay or slash",
-    body: "Each compliant period pays the maker from the fee budget. Consecutive failures slash the bond and end the mandate. At the end of the term, inventory returns to the issuer.",
-    art: <SettleArt />,
+    title: "Quote for the check, pull after",
+    attempt: "Add liquidity just before a check lands and withdraw it straight after, so the book is only deep when someone looks.",
+    outcome: "Blocked",
+    tone: "up",
+    why: "Deposits are locked for 20 seconds and checks arrive at random, so liquidity has to stay to count.",
   },
 ];
 
-const AUDIENCES = [
+const PARTIES = [
   {
-    icon: <Rocket />,
     title: "Launchpads",
-    lede: "Every token you launch graduates with a market maker under contract.",
-    points: [
-      "Point your Meteora DBC config's leftover supply at a Mandate router",
-      "Unsold supply becomes quoting inventory, never a dump",
-      "A liquidity guarantee is a reason for creators to launch with you",
-    ],
+    lede: "Graduate every token with a market maker under contract.",
+    points: ["Route a token's unsold supply into an SLA's escrow at graduation", "Give creators a liquidity guarantee as a reason to launch with you", "Publish a status page for every token you list"],
   },
   {
-    icon: <Building2 />,
-    title: "Token issuers",
-    lede: "Stop lending tokens to market makers on trust.",
-    points: [
-      "Inventory can only be quoted, then comes back to you",
-      "Pay per compliant period, not per promise",
-      "Spread, depth and uptime are public for your holders to see",
-    ],
+    title: "Token teams",
+    lede: "Stop lending inventory to market makers on trust.",
+    points: ["Inventory can only be quoted, then comes back", "Pay per compliant period, not per monthly report", "Replace a maker the day it stops quoting"],
   },
   {
-    icon: <Activity />,
     title: "Market makers",
     lede: "Win mandates on a record nobody can dispute.",
-    points: [
-      "Every period you pass is written on-chain to your maker profile",
-      "Terms, fees and slashing rules are code, not negotiation",
-      "Scoring can't be gamed by traders or by the issuer",
-    ],
+    points: ["Every period you meet is written to your profile", "A credit-style rating any issuer can recompute", "Terms and payment are code, not negotiation"],
   },
-];
-
-const GUARANTEES = [
-  { icon: <Vault />, title: "Inventory has one exit", body: "Vault tokens move only into the mandate's own DLMM position and back. Settlement pays fixed recipients.", code: "instructions/liquidity.rs" },
-  { icon: <Scale />, title: "Quotes are honest by construction", body: "The vault can only bid at or below the reference price and offer at or above it, inside the band the issuer sets.", code: "add_liquidity" },
-  { icon: <Crosshair />, title: "A reference you can't nudge", body: "The reference follows the pair's time-weighted oracle price at a capped speed. A price pushed for one transaction moves nothing.", code: "anchor.rs" },
-  { icon: <ShieldCheck />, title: "Scoring trades can't fake", body: "Checks value each bin at its own price, so buying out the book right before a snapshot changes nothing.", code: "scoring.rs" },
-  { icon: <Eye />, title: "Anyone can check, any time", body: "Snapshots are permissionless and unlimited. The maker can't know when the next one comes, so it has to stay committed.", code: "snapshot" },
-  { icon: <Lock />, title: "Skin in the game", body: "The maker's bond is slashed after the agreed number of failed periods in a row, and the mandate ends.", code: "finalize" },
 ];
 
 export default function Landing() {
@@ -81,145 +78,116 @@ export default function Landing() {
     <>
       <MarketingNav />
       <main>
-        {/* Hero */}
-        <section className="hero">
-          <div className="container hero-grid">
-            <div className="hero-copy">
-              <Link href="/app" className="announce">
-                <span className="tag pass">Live</span>
-                A launched token is under contract on devnet right now
-                <ArrowRight style={{ width: 14, height: 14, color: "var(--faint)" }} />
-              </Link>
-              <h1 className="display">Hire a market maker. The chain holds them to&nbsp;it.</h1>
-              <p className="lead">
-                Mandate turns a token&apos;s market-making agreement into a Solana program. The inventory can only be quoted on Meteora
-                DLMM, anyone can check the quotes at any moment, and the maker is paid for every compliant hour or loses its bond.
-              </p>
-              <div className="hero-cta">
-                <Link className="btn btn-primary btn-lg" href="/app">Open the app <ArrowRight /></Link>
-                <a className="btn btn-secondary btn-lg" href="#how">See how it works</a>
-              </div>
-              <div className="hero-proof">
-                <span><Layers />Built on Meteora DLMM and DBC</span>
-                <span><ShieldCheck />37 tests against Meteora&apos;s mainnet programs</span>
-                <span><GithubMarkSmall />Open source</span>
-              </div>
-            </div>
-            <LiveContract />
-          </div>
-        </section>
+        <NetworkHero />
 
-        {/* Problem */}
-        <section className="band-stripe">
-          <div className="container section problem-grid">
-            <div style={{ display: "grid", gap: 18 }}>
-              <span className="kicker">The problem</span>
-              <div className="stat-big">{Math.round(underCent * 100)}%</div>
-              <h2 className="h2" style={{ maxWidth: "20ch" }}>of new Meteora pools can&apos;t absorb one cent without moving 2%.</h2>
-              <p className="body-lg" style={{ maxWidth: "52ch" }}>
-                We measured the {pools.toLocaleString("en-US")} newest DAMM v2 pools, where launchpad tokens graduate. Even among pools that
-                traded over $10,000 in a day, the median could absorb ${s.volume24hAtLeast10k.medianDepth2pctUsd.toFixed(3)} before the price moved 2%.
-                Volume arrives, trades once against the curve, and the book is empty again.
-              </p>
-              <Link className="link row" style={{ gap: 6 }} href="/research">Read the liquidity research <ArrowRight style={{ width: 15, height: 15 }} /></Link>
-            </div>
-            <div className="card card-pad" style={{ display: "grid", gap: 16 }}>
-              <div className="row-between">
-                <span className="h3">Two-sided depth within ±2%</span>
-                <span className="xs muted">{pools.toLocaleString("en-US")} pools · Sep 2026</span>
-              </div>
-              <HBars buckets={hist} />
-              <span className="xs muted">Depth computed from each pool&apos;s on-chain liquidity and price, not reported volume.</span>
-            </div>
-          </div>
-        </section>
-
-        {/* How it works */}
-        <section id="how" className="section">
+        <section id="contract" className="section">
           <div className="container">
             <div className="section-head">
-              <span className="kicker">How it works</span>
-              <h2 className="h2">A market-making agreement, executed by the program.</h2>
-              <p className="body-lg">Four steps, all on-chain. Nobody has to trust the maker&apos;s dashboard or the issuer&apos;s word.</p>
+              <span className="kicker">The agreement</span>
+              <h2 className="h2">Every promise a market maker makes, written as a clause the program enforces.</h2>
+              <p className="body-lg">
+                Market-making terms usually live in a PDF and a monthly report the maker writes itself. In Mandate they are account data:
+                the checks, the payments and the penalties run on Solana, and the record is public.
+              </p>
             </div>
-            <div className="steps">
-              {STEPS.map((st, i) => (
-                <div className="step" key={st.title}>
-                  <div className="step-art">{st.art}</div>
-                  <span className="step-n">0{i + 1}</span>
-                  <h3 className="h3" style={{ fontSize: 17 }}>{st.title}</h3>
-                  <p className="muted" style={{ margin: 0, lineHeight: 1.6 }}>{st.body}</p>
+            <div className="contract">
+              <div className="contract-col">
+                <div className="row-between"><span className="h3">Example: the KITE/USDC SLA</span><span className="xs muted mono">test network terms</span></div>
+                <Schedule t={EXAMPLE_TERMS} quote="USDC" />
+              </div>
+              <div className="contract-col">
+                <span className="h3">How each clause holds</span>
+                {ENFORCEMENT.map((e) => (
+                  <div className="enforce" key={e.title}>
+                    <h4>{e.title}</h4>
+                    <p>{e.body}</p>
+                  </div>
+                ))}
+                <a className="link small" href={SECURITY_URL} target="_blank" rel="noreferrer">Read the security model</a>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="incidents" className="section" style={{ paddingTop: 0 }}>
+          <div className="container">
+            <div className="section-head">
+              <span className="kicker">Incident log</span>
+              <h2 className="h2">We attacked it the way a bad actor would. Here is what happened.</h2>
+              <p className="body-lg">
+                These run on the test network around the clock, played by simulated participants making real transactions. Watch them in the network&apos;s activity feed.
+              </p>
+            </div>
+            <div className="incidents">
+              {INCIDENTS.map((i) => (
+                <div className="incident" key={i.title}>
+                  <div style={{ display: "grid", gap: 10, justifyItems: "start" }}>
+                    <h3>{i.title}</h3>
+                    <span className={`chip ${i.tone}`}><span className="dot" />{i.outcome}</span>
+                  </div>
+                  <div><span className="eyebrow">Attempt</span><p style={{ marginTop: 6 }}>{i.attempt}</p></div>
+                  <div className="outcome"><span className="eyebrow">Why</span><p>{i.why}</p></div>
                 </div>
               ))}
             </div>
+            <div className="row wrap" style={{ marginTop: 18 }}>
+              <Link className="btn btn-secondary" href="/app">Watch the live feed <ArrowRight /></Link>
+            </div>
           </div>
         </section>
 
-        {/* Audiences */}
-        <section id="who" className="section" style={{ paddingTop: 0 }}>
+        <section className="section" style={{ paddingTop: 0 }}>
           <div className="container">
             <div className="section-head">
               <span className="kicker">Who it&apos;s for</span>
-              <h2 className="h2">One contract, three parties who finally agree on the facts.</h2>
+              <h2 className="h2">One agreement, three parties who can finally agree on the facts.</h2>
             </div>
-            <div className="audiences">
-              {AUDIENCES.map((a) => (
-                <div className="card audience" key={a.title}>
-                  <span className="audience-icon">{a.icon}</span>
+            <div className="parties">
+              {PARTIES.map((p) => (
+                <div className="party-card" key={p.title}>
                   <div style={{ display: "grid", gap: 6 }}>
-                    <h3 className="h3" style={{ fontSize: 18 }}>{a.title}</h3>
-                    <p className="muted" style={{ margin: 0, fontSize: 15 }}>{a.lede}</p>
+                    <h3>{p.title}</h3>
+                    <p className="muted" style={{ margin: 0, fontSize: 15 }}>{p.lede}</p>
                   </div>
-                  <ul>
-                    {a.points.map((p) => <li key={p}><Check />{p}</li>)}
-                  </ul>
+                  <ul>{p.points.map((pt) => <li key={pt}><Check />{pt}</li>)}</ul>
                 </div>
               ))}
             </div>
           </div>
         </section>
 
-        {/* Guarantees */}
-        <section id="guarantees" className="section band-stripe">
-          <div className="container">
-            <div className="section-head">
-              <span className="kicker">Enforced by the program</span>
-              <h2 className="h2">Guarantees that hold even if someone is trying to cheat.</h2>
-              <p className="body-lg">
-                We attacked our own design before shipping it: forced failures, sandwiched snapshots, manipulated reference prices, and a
-                quirk in DLMM&apos;s oracle. Every fix has a regression test.
+        <section className="section" style={{ paddingTop: 0 }}>
+          <div className="container evidence">
+            <div style={{ display: "grid", gap: 18 }}>
+              <span className="kicker">Why it matters</span>
+              <div className="stat-big">{Math.round(underCent * 100)}%</div>
+              <p className="body-lg" style={{ maxWidth: "46ch" }}>
+                of {pools.toLocaleString("en-US")} newly graduated launchpad pools on Solana couldn&apos;t absorb one cent of trading without the price moving 2%.
+                Even pools that traded over $10,000 in a day held a median of ${s.volume24hAtLeast10k.medianDepth2pctUsd.toFixed(3)} of depth.
               </p>
+              <Link className="link small" href="/research">How we measured it</Link>
             </div>
-            <div className="guarantees">
-              {GUARANTEES.map((g) => (
-                <div className="guarantee" key={g.title}>
-                  {g.icon}
-                  <h3 className="h3" style={{ fontSize: 16 }}>{g.title}</h3>
-                  <p className="muted" style={{ margin: 0, lineHeight: 1.6 }}>{g.body}</p>
-                  <code>{g.code}</code>
-                </div>
-              ))}
-            </div>
-            <div className="row wrap" style={{ marginTop: 20, gap: 12 }}>
-              <a className="btn btn-secondary" href={SECURITY_URL} target="_blank" rel="noreferrer"><ShieldCheck />Read the security model</a>
-              <span className="small muted">Self-reviewed and tested against Meteora&apos;s mainnet programs. Not yet externally audited.</span>
+            <div className="card card-pad" style={{ display: "grid", gap: 16 }}>
+              <div className="row-between wrap">
+                <span className="h3">Two-sided depth within ±2%</span>
+                <span className="xs muted mono">{pools.toLocaleString("en-US")} pools · Sep 2026</span>
+              </div>
+              <HBars buckets={hist} />
+              <span className="xs muted">Computed from each pool&apos;s on-chain liquidity and price, not reported volume.</span>
             </div>
           </div>
         </section>
 
-        {/* CTA */}
-        <section className="section">
+        <section className="section" style={{ paddingTop: 0 }}>
           <div className="container">
-            <div className="cta-band">
+            <div className="closing">
               <div style={{ display: "grid", gap: 12 }}>
-                <h2 className="h2">Put your token&apos;s liquidity under contract.</h2>
-                <p style={{ margin: 0, opacity: 0.72, fontSize: 16, maxWidth: "50ch" }}>
-                  Watch a live mandate, check a maker&apos;s record, or draft terms for your own token in a couple of minutes.
-                </p>
+                <h2 className="h2">Put your token&apos;s liquidity under an SLA.</h2>
+                <p>Watch the network, check a maker&apos;s rating, or draft terms for your own token in a couple of minutes.</p>
               </div>
               <div className="row wrap">
-                <Link className="btn btn-primary btn-lg" href="/app">Open the app <ArrowRight /></Link>
-                <a className="btn btn-secondary btn-lg" href={REPO_URL} target="_blank" rel="noreferrer">View the source</a>
+                <Link className="btn btn-primary btn-lg" href="/app">Open the network <ArrowRight /></Link>
+                <Link className="btn btn-secondary btn-lg" href="/app/create">Draft an SLA</Link>
               </div>
             </div>
           </div>
@@ -228,8 +196,4 @@ export default function Landing() {
       <Footer />
     </>
   );
-}
-
-function GithubMarkSmall() {
-  return <span style={{ width: 15, height: 15, display: "inline-grid", color: "var(--faint)" }}><GithubMark /></span>;
 }

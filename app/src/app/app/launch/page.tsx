@@ -20,7 +20,7 @@ import {
 } from "@meteora-ag/dynamic-bonding-curve-sdk";
 import { useMandateActions, describeError } from "@/lib/actions";
 import { useToast } from "@/components/Providers";
-import { CLUSTER, explorerUrl } from "@/lib/chain";
+import { CLUSTER, explorerUrl, fetchSimBook } from "@/lib/chain";
 import { pda } from "../../../../../sdk/src";
 import { WalletButton } from "@/components/wallet";
 import { Address, InfoTip } from "@/components/ui";
@@ -56,7 +56,10 @@ export default function Launch() {
   const router = publicKey ? pda.router(publicKey) : null;
 
   useEffect(() => {
-    fetch(CLUSTER === "localnet" ? "/demo.json" : `/demo.${CLUSTER}.json`).then((r) => (r.ok ? r.json() : null)).then((d) => d && setQuoteMint(d.quoteMint)).catch(() => {});
+    fetchSimBook()
+      .then(async (b) => b?.quoteMint ?? (await fetch(CLUSTER === "localnet" ? "/demo.json" : `/demo.${CLUSTER}.json`).then((r) => (r.ok ? r.json() : null)))?.quoteMint)
+      .then((q) => q && setQuoteMint(q))
+      .catch(() => {});
   }, []);
   useEffect(() => {
     if (!router) return setRouterExists(false);
@@ -126,10 +129,11 @@ export default function Launch() {
     <>
       <div className="page-head">
         <div>
-          <h1 className="h1">Mandated launches</h1>
-          <p className="sub">
-            Give every token you launch on Meteora&apos;s Dynamic Bonding Curve a market maker under contract. Your DBC config sends each
-            token&apos;s unsold supply to your Mandate router; at graduation it becomes that token&apos;s quoting inventory, never a dump.
+          <span className="eyebrow">For launchpads</span>
+          <h1 className="h1">Launch every token with an SLA</h1>
+          <p className="muted" style={{ margin: 0, maxWidth: "70ch" }}>
+            Give every token you launch a market maker under a liquidity SLA. Your bonding-curve config (Meteora DBC) sends each token&apos;s
+            unsold supply to your Mandate router; at graduation it becomes the SLA&apos;s quoting inventory, never a dump.
           </p>
         </div>
       </div>
@@ -146,7 +150,7 @@ export default function Launch() {
                 <input className="input mono" value={quoteMint} onChange={(e) => setQuoteMint(e.target.value)} placeholder="e.g. USDC" /></label>
               <label className="field"><span className="field-label">Total supply per token</span>
                 <input className="input" value={supply} onChange={(e) => setSupply(e.target.value)} inputMode="numeric" /></label>
-              <label className="field"><span className="field-label">Reserved for the market maker<InfoTip>Held back from the curve and routed to the token&apos;s mandate at graduation.</InfoTip></span>
+              <label className="field"><span className="field-label">Reserved for the market maker<InfoTip>Held back from the curve and routed into the token&apos;s SLA escrow at graduation.</InfoTip></span>
                 <span className="input-wrap"><input className="input has-suffix" value={leftoverPct} onChange={(e) => setLeftoverPct(e.target.value)} inputMode="decimal" /><span className="input-suffix">%</span></span></label>
               <label className="field"><span className="field-label">Starting market cap</span>
                 <input className="input" value={initialMc} onChange={(e) => setInitialMc(e.target.value)} inputMode="numeric" /></label>
@@ -185,11 +189,11 @@ export default function Launch() {
           <Step n={3} state={s3} title="At graduation">
             <p className="small muted" style={{ margin: 0, lineHeight: 1.6 }}>
               When the curve completes, anyone can run DBC&apos;s migration and <span className="code">withdraw_leftover</span>. Then create the
-              token&apos;s mandate with its DAMM v2 pool, register the launch, and anyone can route the leftover into the mandate vault.
+              token&apos;s SLA with its DAMM v2 pool, register the launch, and anyone can route the leftover into the SLA&apos;s escrow.
               The repository&apos;s <span className="code">scripts/demo.ts</span> runs this whole sequence end to end.
             </p>
             <div className="row wrap">
-              <Link className="btn btn-secondary" href="/app/create">Create the token&apos;s mandate</Link>
+              <Link className="btn btn-secondary" href="/app/create">Draft the token&apos;s SLA</Link>
               <Link className="btn btn-ghost" href="/app">See the live demo launch</Link>
             </div>
           </Step>
@@ -200,8 +204,8 @@ export default function Launch() {
             <div className="card-head"><span className="h3">What changes for your launches</span></div>
             <div className="card-body" style={{ display: "grid", gap: 12 }}>
               {[
-                ["Without Mandate", "Unsold supply goes to a wallet. Graduated pools sit nearly empty, and holders can't trade without moving the price."],
-                ["With Mandate", "Unsold supply is locked in a vault that can only quote. A bonded maker keeps both sides of the book, and anyone can verify it."],
+                ["Without an SLA", "Unsold supply goes to a wallet. Graduated pools sit nearly empty, and holders can't trade without moving the price."],
+                ["With an SLA", "Unsold supply sits in escrow that can only quote. A bonded maker keeps both sides of the book, and the token gets a public status page."],
               ].map(([t, d], i) => (
                 <div key={t} style={{ display: "grid", gap: 4, paddingBottom: i === 0 ? 12 : 0, borderBottom: i === 0 ? "1px solid var(--line)" : undefined }}>
                   <span className={`tag ${i === 0 ? "fail" : "pass"}`} style={{ justifySelf: "start" }}>{t}</span>
