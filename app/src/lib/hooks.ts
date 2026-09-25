@@ -4,8 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 /** Poll an async loader; returns { data, error, reload }. */
 /**
- * Poll `load` every `intervalMs`, gently: never overlaps requests, pauses while the tab is
- * hidden, and backs off (up to 2 minutes) while the RPC is failing or rate-limiting.
+ * Poll `load` every `intervalMs`, gently: never overlaps requests, loads once and then pauses
+ * while the tab is hidden, and backs off (up to 2 minutes) while the RPC is failing or rate-limiting.
  * The last good data stays on screen during errors.
  */
 export function usePoll<T>(load: () => Promise<T>, deps: unknown[], intervalMs = 10_000) {
@@ -34,9 +34,12 @@ export function usePoll<T>(load: () => Promise<T>, deps: unknown[], intervalMs =
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
     let stopped = false;
+    let first = true;
     const tick = async () => {
       if (stopped) return;
-      if (typeof document === "undefined" || !document.hidden) await reload();
+      // Always load once; after that, skip polls while the tab is hidden.
+      if (first || typeof document === "undefined" || !document.hidden) await reload();
+      first = false;
       const delay = Math.min(120_000, intervalMs * 2 ** failures.current);
       timer = setTimeout(tick, delay);
     };
