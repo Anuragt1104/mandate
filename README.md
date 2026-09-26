@@ -1,3 +1,5 @@
+<p><img src="docs/brand/mark.svg" width="72" height="72" alt="Mandate logo: an M whose middle stroke is a check mark"></p>
+
 # Mandate
 
 Accountable liquidity management on Solana: hire a market maker without handing over your

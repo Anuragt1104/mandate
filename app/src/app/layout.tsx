@@ -15,7 +15,10 @@ export const metadata: Metadata = {
     title: "Mandate",
     description: "Accountable liquidity management: restricted custody and automatic settlement for market-making agreements.",
     type: "website",
+    siteName: "Mandate",
   },
+  twitter: { card: "summary_large_image", title: "Mandate", description: "Accountable liquidity management on Solana." },
+  applicationName: "Mandate",
 };
 
 export const viewport: Viewport = {
