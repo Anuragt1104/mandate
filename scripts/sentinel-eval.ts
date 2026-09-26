@@ -4,10 +4,15 @@
  * Generates market-maker scenarios with a hidden behaviour and a known future, renders only
  * what a watchtower could observe, and scores the sentinel's answers from the configured
  * decision model (Jev by default) against the deterministic rules on the same observations:
- *   - failing:   will the next check fail?          (drives where checks go)
- *   - breach:    will the maker let it breach?       (the status page outlook)
- *   - diagnosis: what is going on?                   (the incident label)
- *   - exit:      is the maker leaving on purpose?
+ *   - failing:    will the next check fail?          (rules only; drives where checks go)
+ *   - breach:     will the agreement breach?          (the status page outlook)
+ *   - diagnosis:  what is going on?                   (the incident label)
+ *   - noRedeploy: no liquidity placed within two periods? (asked only while failing; may abstain)
+ *
+ * These are synthetic scenarios: useful to compare policies and catch regressions, not
+ * evidence of real-world accuracy. Probabilities are reported with Brier scores and
+ * reliability bins (predicted vs observed rates), not only ranking (AUC); abstentions are
+ * counted, not scored.
  *
  *   npx tsx scripts/sentinel-eval.ts [cases per kind, default 12] [seed]
  *
@@ -18,7 +23,7 @@ import fs from "fs";
 import path from "path";
 import "../keeper/common"; // loads .env
 import { systemOneFromEnv } from "../sdk/src/systemone";
-import { assessWithModel, assessWithRules, type Assessment, type Diagnosis, type Measurement, type Observation } from "../keeper/sentinel";
+import { assessWithModel, assessWithRules, combine, type Assessment, type Diagnosis, type Measurement, type Observation } from "../keeper/sentinel";
 
 const PER_KIND = Number(process.argv[2] ?? 12);
 let seed = Number(process.argv[3] ?? 7);
@@ -33,10 +38,11 @@ const rand = () => {
 const U = (a: number, b: number) => a + rand() * (b - a);
 const pick = <T,>(xs: T[]) => xs[Math.floor(rand() * xs.length)];
 
-const TERMS = { minDepth: 500, windowPct: 2, maxSpreadBps: 100, periodSecs: 60, maxFailures: 3 };
+const TERMS = { minDepth: 500, windowPct: 2, maxSpreadBps: 100, periodSecs: 60, maxFailures: 3, binStep: 10 };
 const MIN = TERMS.minDepth;
 
-interface Truth { diagnosis: Diagnosis; failing: boolean; breach: boolean; exit: boolean }
+/** noRedeploy is only defined while the obligations are unmet. */
+interface Truth { diagnosis: Diagnosis; failing: boolean; breach: boolean; noRedeploy?: boolean }
 interface Case { id: string; kind: string; obs: Observation; truth: Truth }
 
 // ---------------------------------------------------------------- building blocks
@@ -44,10 +50,10 @@ interface Case { id: string; kind: string; obs: Observation; truth: Truth }
 const healthy = () => MIN * U(2.5, 20);
 const thin = () => MIN * U(1.05, 1.28);
 const spread = () => Math.round(U(8, 70));
-const check = (agoSecs: number, bids: number, asks: number): Measurement => {
+const check = (agoSecs: number, bids: number, asks: number, referenceBin = 0): Measurement => {
   const ok = bids >= MIN && asks >= MIN;
   const empty = bids <= 0 || asks <= 0;
-  return { agoSecs, ok: ok && !empty, bids, asks, spreadBps: empty ? null : ok ? spread() : Math.round(U(40, 180)) };
+  return { agoSecs, ok: ok && !empty, bids, asks, spreadBps: empty ? null : ok ? spread() : Math.round(U(40, 180)), referenceBin };
 };
 /** Passing checks going back in time from `from` seconds ago. */
 function history(n: number, from: number, bids = healthy, asks = healthy): Measurement[] {
@@ -74,10 +80,11 @@ const base = (o: Partial<Observation>): Observation => ({
   pair: pick(["ORBT/USDC", "KITE/USDC", "MAND/USDC", "NOVA/USDC"]),
   quote: "USDC",
   terms: TERMS,
-  acceptedAgoSecs: U(600, 20_000),
+  scoringAgoSecs: U(600, 20_000),
   checks: [],
   failedPeriodsInARow: 0,
   makerActivity: [],
+  activityComplete: true,
   position: around(),
   // As in production: the escrow fact is only stated when no position is open.
   escrowIdleShare: null,
@@ -93,7 +100,7 @@ const KINDS: Record<string, () => { obs: Observation; truth: Truth }> = {
     const last = U(5, 50);
     return {
       obs: base({ checks: [check(last, healthy(), healthy()), ...history(Math.round(U(2, 5)), last)], makerActivity: [place(U(300, 3000)), ...(rand() < 0.4 ? [fees(U(3000, 9000))] : [])] }),
-      truth: { diagnosis: "quoting_normally", failing: false, breach: false, exit: false },
+      truth: { diagnosis: "quoting_normally", failing: false, breach: false },
     };
   },
   // Withdraws only to re-place around a moved price: benign.
@@ -103,7 +110,7 @@ const KINDS: Record<string, () => { obs: Observation; truth: Truth }> = {
     const lastAgo = rand() < 0.5 ? U(2, placedAgo - 1) : withdrewAgo + U(10, 40);
     return {
       obs: base({ checks: [check(lastAgo, healthy(), healthy()), ...history(3, lastAgo)], makerActivity: [place(placedAgo), withdrawAll(withdrewAgo), place(U(1200, 6000))] }),
-      truth: { diagnosis: "quoting_normally", failing: false, breach: false, exit: false },
+      truth: { diagnosis: "quoting_normally", failing: false, breach: false },
     };
   },
   // The early warning: the last check passed, then the maker pulled everything.
@@ -113,7 +120,7 @@ const KINDS: Record<string, () => { obs: Observation; truth: Truth }> = {
     const act = [withdrawAll(withdrewAgo), ...(rand() < 0.5 ? [fees(withdrewAgo + U(20, 200))] : []), place(U(1500, 9000))];
     return {
       obs: base({ checks: [check(lastAgo, healthy(), healthy()), ...history(3, lastAgo)], makerActivity: act, position: { open: false }, escrowIdleShare: 1, record: record(pick(["diligent", "mixed", "poor"])) }),
-      truth: { diagnosis: "withdrew_liquidity", failing: true, breach: true, exit: true },
+      truth: { diagnosis: "withdrew_liquidity", failing: true, breach: true, noRedeploy: true },
     };
   },
   // Pulled out and the checks are already failing.
@@ -124,7 +131,7 @@ const KINDS: Record<string, () => { obs: Observation; truth: Truth }> = {
     const earlierFails = Array.from({ length: streak }, (_, i) => check(lastAgo + 60 * (i + 1) - U(0, 20), 0, 0));
     return {
       obs: base({ checks: [check(lastAgo, 0, 0), ...earlierFails, ...history(2, withdrewAgo)], failedPeriodsInARow: streak, makerActivity: [withdrawAll(withdrewAgo), place(U(2000, 9000))], position: { open: false }, escrowIdleShare: 1, record: record(pick(["mixed", "poor", "diligent"])) }),
-      truth: { diagnosis: "withdrew_liquidity", failing: true, breach: true, exit: true },
+      truth: { diagnosis: "withdrew_liquidity", failing: true, breach: true, noRedeploy: true },
     };
   },
   // Trims inventory but stays compliant.
@@ -136,7 +143,7 @@ const KINDS: Record<string, () => { obs: Observation; truth: Truth }> = {
         checks: [check(last, thinSide ? thin() : healthy(), thinSide ? healthy() : thin()), ...history(3, last)],
         makerActivity: [{ agoSecs: U(60, 400), action: pick(["withdrew half of its liquidity back to escrow", "removed 50% of its liquidity from the book"]) }, place(U(1500, 8000))],
       }),
-      truth: { diagnosis: "thin_but_compliant", failing: false, breach: false, exit: false },
+      truth: { diagnosis: "thin_but_compliant", failing: false, breach: false },
     };
   },
   // Close to the minimum after ordinary trading.
@@ -145,32 +152,35 @@ const KINDS: Record<string, () => { obs: Observation; truth: Truth }> = {
     const thinSide = rand() < 0.5;
     return {
       obs: base({ checks: [check(last, thinSide ? thin() : healthy(), thinSide ? healthy() : thin()), ...history(3, last)], makerActivity: [place(U(600, 5000))] }),
-      truth: { diagnosis: "thin_but_compliant", failing: false, breach: false, exit: false },
+      truth: { diagnosis: "thin_but_compliant", failing: false, breach: false },
     };
   },
-  // A large trade drained one side of a diligent maker's book; it will refill.
-  depleted_diligent: () => {
+  // The reference moved several bins; a diligent maker's quotes now sit partly outside the
+  // window on one side. It re-centres quickly (its record and recent activity show it).
+  moved_diligent: () => {
     const last = U(5, 35);
     const prevAgo = last + U(15, 40);
-    const asksSide = rand() < 0.5;
-    const before = check(prevAgo, U(3000, 6000), U(3000, 6000));
-    const now = asksSide ? check(last, before.bids + U(2500, 5000), U(0, 420)) : check(last, U(0, 420), before.asks + U(2500, 5000));
+    const up = rand() < 0.5;
+    const shift = Math.round(U(6, 14)) * (up ? 1 : -1);
+    const before = check(prevAgo, U(3000, 6000), U(3000, 6000), 0);
+    const now = up ? check(last, before.bids * U(1.2, 1.6), U(0, 420), shift) : check(last, U(0, 420), before.asks * U(1.2, 1.6), shift);
     return {
-      obs: base({ checks: [now, before, ...history(3, prevAgo)], makerActivity: [place(U(400, 2400)), ...(rand() < 0.5 ? [place(U(3000, 9000))] : [])], record: record("diligent") }),
-      truth: { diagnosis: "side_depleted_by_trading", failing: true, breach: false, exit: false },
+      obs: base({ checks: [now, before, ...history(3, prevAgo)], makerActivity: [place(U(60, 400)), place(U(900, 3000))], record: record("diligent") }),
+      truth: { diagnosis: "reference_moved", failing: true, breach: false, noRedeploy: false },
     };
   },
-  // The same drained side, under a maker that has stopped tending its book.
-  depleted_neglected: () => {
+  // The same move, under a maker that has stopped tending its book.
+  moved_neglected: () => {
     const last = U(5, 35);
     const prevAgo = last + U(15, 40);
-    const asksSide = rand() < 0.5;
-    const before = check(prevAgo, asksSide ? U(6000, 9000) : U(0, 400), asksSide ? U(0, 400) : U(6000, 9000));
-    const now = check(last, asksSide ? before.bids * U(0.97, 1.03) : U(0, 300), asksSide ? U(0, 300) : before.asks * U(0.97, 1.03));
+    const up = rand() < 0.5;
+    const shift = Math.round(U(6, 14)) * (up ? 1 : -1);
+    const before = check(prevAgo, up ? U(6000, 9000) : U(0, 400), up ? U(0, 400) : U(6000, 9000), shift - Math.sign(shift) * Math.round(U(2, 4)));
+    const now = check(last, up ? before.bids * U(0.97, 1.03) : U(0, 300), up ? U(0, 300) : before.asks * U(0.97, 1.03), shift);
     const streak = Math.round(U(1, 2));
     return {
       obs: base({ checks: [now, before, ...history(1, prevAgo)], failedPeriodsInARow: streak, makerActivity: [place(U(9000, 30000))], record: record("poor") }),
-      truth: { diagnosis: "side_depleted_by_trading", failing: true, breach: true, exit: false },
+      truth: { diagnosis: "reference_moved", failing: true, breach: true, noRedeploy: true },
     };
   },
   // The price walked out of a sleeping maker's range.
@@ -187,14 +197,22 @@ const KINDS: Record<string, () => { obs: Observation; truth: Truth }> = {
         position: { open: true, lowerPct: lower, upperPct: upper },
         record: record(pick(["mixed", "poor"])),
       }),
-      truth: { diagnosis: "out_of_range", failing: true, breach: true, exit: false },
+      truth: { diagnosis: "out_of_range", failing: true, breach: true, noRedeploy: true },
     };
   },
-  // Just accepted; liquidity not placed yet.
+  // Just accepted, still in the setup window; liquidity not placed yet.
   not_started: () => ({
-    obs: base({ acceptedAgoSecs: U(8, 45), checks: [], makerActivity: [], position: { open: false }, escrowIdleShare: 1, record: record(pick(["diligent", "mixed"])) }),
-    truth: { diagnosis: "not_started", failing: false, breach: false, exit: false },
+    obs: base({ scoringAgoSecs: -U(8, 50), checks: [], makerActivity: [], position: { open: false }, escrowIdleShare: 1, record: record(pick(["diligent", "mixed"])) }),
+    truth: { diagnosis: "not_started", failing: false, breach: false },
   }),
+  // A withdrawal, but part of the event history couldn't be read: noRedeploy should abstain.
+  exit_incomplete_history: () => {
+    const lastAgo = U(5, 40);
+    return {
+      obs: base({ checks: [check(lastAgo, 0, 0), ...history(2, lastAgo + U(60, 200))], makerActivity: [withdrawAll(lastAgo + U(20, 50))], activityComplete: false, position: { open: false }, escrowIdleShare: 1 }),
+      truth: { diagnosis: "withdrew_liquidity", failing: true, breach: true },
+    };
+  },
 };
 
 // ---------------------------------------------------------------- metrics
@@ -209,6 +227,22 @@ function auc(p: number[], y: boolean[]) {
   return wins / (pos.length * neg.length);
 }
 const acc = (p: number[], y: boolean[]) => p.filter((x, i) => x >= 0.5 === y[i]).length / p.length;
+/** Predicted vs observed rate in 5 equal-width probability bins. */
+function reliability(p: number[], y: boolean[]) {
+  return Array.from({ length: 5 }, (_, b) => {
+    const idx = p.map((x, i) => [x, i] as const).filter(([x]) => (b === 4 ? x >= 0.8 : x >= b * 0.2 && x < (b + 1) * 0.2)).map(([, i]) => i);
+    return idx.length ? { bin: `${(b * 0.2).toFixed(1)}-${((b + 1) * 0.2).toFixed(1)}`, n: idx.length, predicted: idx.reduce((s, i) => s + p[i], 0) / idx.length, observed: idx.filter((i) => y[i]).length / idx.length } : null;
+  }).filter(Boolean);
+}
+/** Score a probability column; cases where the truth is undefined or the prediction abstained (NaN) are left out and counted. */
+function prob(ps: number[], ys: (boolean | undefined)[]) {
+  const keep = ps.map((p, i) => Number.isFinite(p) && ys[i] !== undefined);
+  const p = ps.filter((_, i) => keep[i]);
+  const y = ys.filter((_, i) => keep[i]) as boolean[];
+  const defined = ys.filter((v) => v !== undefined).length;
+  const abstained = ps.filter((x, i) => !Number.isFinite(x) && ys[i] !== undefined).length;
+  return { n: p.length, abstained, coverage: defined ? p.length / defined : NaN, brier: p.length ? brier(p, y) : NaN, auc: auc(p, y), accuracy: p.length ? acc(p, y) : NaN, reliability: reliability(p, y) };
+}
 const pctl = (xs: number[], q: number) => [...xs].sort((a, b) => a - b)[Math.min(xs.length - 1, Math.floor(q * xs.length))];
 
 async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T, i: number) => Promise<R>) {
@@ -227,29 +261,29 @@ function score(name: string, cases: Case[], as: (Assessment | null)[]) {
   const ok = cases.map((_, i) => as[i]).filter(Boolean) as Assessment[];
   const cs = cases.filter((_, i) => as[i]);
   const col = (f: (a: Assessment) => number) => ok.map(f);
-  const y = (f: (t: Truth) => boolean) => cs.map((c) => f(c.truth));
-  const byKind: Record<string, { n: number; diagnosis: number; failing: number; breach: number; exit: number }> = {};
+  const y = (f: (t: Truth) => boolean | undefined) => cs.map((c) => f(c.truth));
+  const byKind: Record<string, { n: number; diagnosis: number; failing: number; breach: number; noRedeploy: number }> = {};
   cs.forEach((c, i) => {
-    const k = (byKind[c.kind] ??= { n: 0, diagnosis: 0, failing: 0, breach: 0, exit: 0 });
+    const k = (byKind[c.kind] ??= { n: 0, diagnosis: 0, failing: 0, breach: 0, noRedeploy: 0 });
     k.n++;
     k.diagnosis += Number(ok[i].diagnosis === c.truth.diagnosis);
     k.failing += ok[i].risk;
     k.breach += ok[i].breach;
-    k.exit += ok[i].exit;
+    k.noRedeploy += Number.isFinite(ok[i].noRedeploy) ? ok[i].noRedeploy : NaN;
   });
   for (const k of Object.values(byKind)) {
     k.diagnosis /= k.n;
     k.failing /= k.n;
     k.breach /= k.n;
-    k.exit /= k.n;
+    k.noRedeploy /= k.n;
   }
   return {
     name,
     answered: ok.length,
     diagnosisAccuracy: ok.filter((a, i) => a.diagnosis === cs[i].truth.diagnosis).length / ok.length,
-    failing: { brier: brier(col((a) => a.risk), y((t) => t.failing)), auc: auc(col((a) => a.risk), y((t) => t.failing)), accuracy: acc(col((a) => a.risk), y((t) => t.failing)) },
-    breach: { brier: brier(col((a) => a.breach), y((t) => t.breach)), auc: auc(col((a) => a.breach), y((t) => t.breach)), accuracy: acc(col((a) => a.breach), y((t) => t.breach)) },
-    exit: { brier: brier(col((a) => a.exit), y((t) => t.exit)), auc: auc(col((a) => a.exit), y((t) => t.exit)), accuracy: acc(col((a) => a.exit), y((t) => t.exit)) },
+    failing: prob(col((a) => a.risk), y((t) => t.failing)),
+    breach: prob(col((a) => a.breach), y((t) => t.breach)),
+    noRedeploy: prob(col((a) => a.noRedeploy), y((t) => t.noRedeploy)),
     latencyMs: ok.some((a) => a.latencyMs) ? { p50: pctl(col((a) => a.latencyMs), 0.5), p95: pctl(col((a) => a.latencyMs), 0.95) } : null,
     byKind,
   };
@@ -285,16 +319,13 @@ async function main() {
   const hybrid = cases.map((_, i) => (rules[i].confidence >= GATE || !model[i] ? rules[i] : model[i]));
   // What the watchtower actually publishes (keeper/watchtower.ts judge): the rules' next-check
   // risk, the model's breach outlook and intent, and the diagnosis from whichever is confident.
-  const deployed: (Assessment | null)[] = cases.map((_, i) => {
-    const r = rules[i];
-    const m = model[i];
-    if (!m) return r;
-    return { ...r, breach: m.breach, exit: m.exit, diagnosis: r.confidence >= GATE ? r.diagnosis : m.diagnosis, confidence: r.confidence >= GATE ? r.confidence : m.confidence, source: `${m.source}+rules`, latencyMs: m.latencyMs };
-  });
+  // As keeper/watchtower.ts runs it: the model is only asked once a check has been recorded.
+  const deployed: (Assessment | null)[] = cases.map((c, i) => (c.obs.checks.length ? combine(rules[i], model[i]) : rules[i]));
   const routed = rules.filter((r) => r.confidence < GATE).length;
   const modelName = model.find(Boolean)?.source ?? "model";
   const report = {
     generatedAt: new Date().toISOString(), perKind: PER_KIND, seed: Number(process.argv[3] ?? 7), model: modelName, failures,
+    note: "Synthetic scenarios. Compare policies with this; do not read it as real-world accuracy.",
     hybrid: { gate: GATE, routedToModel: routed, of: cases.length },
     results: [score("rules", cases, rules), score(modelName, cases, model), score("hybrid", cases, hybrid), score("deployed", cases, deployed)],
   };
@@ -309,13 +340,14 @@ async function main() {
   row("failing  Brier", (r) => r.failing.brier);
   row("breach   AUC", (r) => r.breach.auc);
   row("breach   Brier", (r) => r.breach.brier);
-  row("exit     AUC", (r) => r.exit.auc);
-  row("exit     Brier", (r) => r.exit.brier);
-  console.log(`\nper kind: diagnosis accuracy · mean P(failing) · mean P(breach) · mean P(exit)`);
+  row("no-redeploy AUC", (r) => r.noRedeploy.auc);
+  row("no-redeploy Brier", (r) => r.noRedeploy.brier);
+  row("no-redeploy coverage", (r) => r.noRedeploy.coverage);
+  console.log(`\nper kind: diagnosis accuracy · mean P(failing) · mean P(breach) · mean P(no redeploy)`);
   for (const kind of Object.keys(KINDS)) {
     const cells = report.results.map((r) => {
       const k = r.byKind[kind];
-      return k ? `${f(k.diagnosis)} ${f(k.failing)} ${f(k.breach)} ${f(k.exit)}` : "";
+      return k ? `${f(k.diagnosis)} ${f(k.failing)} ${f(k.breach)} ${f(k.noRedeploy)}` : "";
     });
     console.log(`${kind.padEnd(20)}${cells.map((c) => c.padStart(25)).join("")}`);
   }

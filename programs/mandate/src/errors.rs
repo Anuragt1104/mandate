@@ -50,4 +50,6 @@ pub enum MandateError {
     InsufficientVault,
     #[msg("Liquidity was added too recently to be removed")]
     LiquidityCooldown,
+    #[msg("The fee vault must hold every fee the maker could earn before a maker can accept")]
+    UnderfundedFees,
 }

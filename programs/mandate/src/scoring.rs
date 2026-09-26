@@ -9,8 +9,11 @@
 //! against the position just before a snapshot. What counts is where the maker placed
 //! the inventory:
 //!
-//! - bid side: bins at or below the reference bin, within the depth window
-//! - ask side: bins above the reference bin, within the depth window
+//! - bid side: the reference bin and the `W` bins below it
+//! - ask side: the `W` bins above the reference bin
+//!
+//! where `W = floor(depth_window_bps / bin_step)`: the window is counted in whole bins,
+//! never past `depth_window_bps` (bin distance × bin step).
 //! - spread: distance between the nearest bins, on each side, at which the cumulative
 //!   committed value reaches `min_depth_quote / SPREAD_SIZE_DIVISOR`
 
@@ -52,7 +55,7 @@ where
     F: Fn(i64) -> Option<&'a [BinAmounts]>,
 {
     let step = input.bin_step.max(1);
-    let window_bins = (terms.depth_window_bps as i32 + step as i32 - 1) / step as i32;
+    let window_bins = terms.depth_window_bps as i32 / step as i32;
     let size = (terms.min_depth_quote / SPREAD_SIZE_DIVISOR).max(1);
     let anchor = input.anchor_bin;
 
@@ -89,8 +92,8 @@ where
                 bid_at_size = Some(bin);
             }
         }
-        for k in 0..=window_bins {
-            let bin = anchor + 1 + k;
+        for k in 1..=window_bins {
+            let bin = anchor + k;
             ask_depth = ask_depth.saturating_add(committed(bin)?);
             if ask_at_size.is_none() && ask_depth >= size {
                 ask_at_size = Some(bin);
@@ -226,6 +229,68 @@ mod tests {
         let m = run(&a, &shares, 0);
         assert_eq!(m.spread_bps, 11 * 25);
         assert!(!m.ok);
+    }
+
+    #[test]
+    fn window_never_extends_past_its_bps() {
+        // 200 bps at bin step 25 = 8 bins: bids at 0..=-8 and asks at 1..=8 count;
+        // -9 and 9 (225 bps away) do not.
+        let mut a: Arrays = ([BinAmounts::default(); 70], [BinAmounts::default(); 70]);
+        let mut shares = [0u128; 70];
+        for (bin, x, y) in [(-9, 0, 700), (-8, 0, 100), (8, 100, 0), (9, 700, 0)] {
+            set(&mut a, bin, BinAmounts { amount_x: x, amount_y: y, liquidity_supply: 1 });
+            shares[(bin + 5 + 5) as usize] = 1;
+        }
+        let m = measure(
+            MeasureInput {
+                anchor_bin: 0,
+                bin_step: 25,
+                position: Some((-10, 59, &shares[..])),
+                bin_array: |i| if i == 0 { Some(&a.0[..]) } else if i == -1 { Some(&a.1[..]) } else { None },
+            },
+            &terms(),
+        )
+        .ok()
+        .unwrap();
+        assert_eq!(m.bid_depth_quote, 100);
+        assert!(m.ask_depth_quote >= 100 && m.ask_depth_quote < 110, "{}", m.ask_depth_quote);
+        assert_eq!(m.spread_bps, 16 * 25);
+    }
+
+    /// The same fixtures as tests/measure.test.ts: the SDK mirror must produce these exact numbers.
+    #[test]
+    fn fixtures_match_the_sdk() {
+        // Fixture 1: bins -5..=6, 2_000 atoms per side bin, fully owned.
+        let mut a: Arrays = ([BinAmounts::default(); 70], [BinAmounts::default(); 70]);
+        let mut shares = [0u128; 70];
+        for bin in -5i32..=6 {
+            let (x, y) = if bin <= 0 { (0, 2_000) } else { (2_000, 0) };
+            set(&mut a, bin, BinAmounts { amount_x: x, amount_y: y, liquidity_supply: 1_000_000 });
+            shares[(bin + 5) as usize] = 1_000_000;
+        }
+        let m = run(&a, &shares, 0);
+        assert_eq!((m.ok, m.bid_depth_quote, m.ask_depth_quote, m.spread_bps), (true, 12_000, 12_104, 25));
+
+        // Fixture 2: value the bin, then apply the share: (1 + 3) / 2 = 2.
+        let mut b = [BinAmounts::default(); 70];
+        b[0] = BinAmounts { amount_x: 1, amount_y: 3, liquidity_supply: 2 };
+        let mut s = [0u128; 70];
+        s[0] = 1;
+        let t = MandateTerms { min_depth_quote: 2, ..terms() };
+        let m = measure(
+            MeasureInput { anchor_bin: 0, bin_step: 25, position: Some((0, 69, &s[..])), bin_array: |i| if i == 0 { Some(&b[..]) } else { None } },
+            &t,
+        )
+        .ok()
+        .unwrap();
+        assert_eq!(m.bid_depth_quote, 2);
+
+        // Fixture 3: prices.
+        assert_eq!(price_from_bin_id(1, 10), Some(18465190817783261167));
+        assert_eq!(price_from_bin_id(-5358, 4), Some(2164342040064997394));
+        assert_eq!(price_from_bin_id(100, 25), Some(23678699809202413098));
+        assert_eq!(price_from_bin_id(-2000, 80), Some(2212358501109));
+        assert_eq!(price_from_bin_id(0x80000, 1), None);
     }
 
     #[test]

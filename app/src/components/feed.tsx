@@ -13,12 +13,16 @@ import { DIAGNOSIS_LABELS } from "../../../sdk/src/sentinel";
 export interface FeedContext {
   book: PersonaBook;
   /** mandate address → what the feed needs to name it */
-  mandates: Record<string, { symbol: string; quote: string; maker: PublicKey; issuer: PublicKey; terms: any } | undefined>;
+  mandates: Record<string, { symbol: string; quote: string; maker: PublicKey; issuer: PublicKey; terms: any; baseDecimals?: number; quoteDecimals?: number } | undefined>;
+  /** Watchtowers this site lists (publisher key → name); reads from anyone else are marked unverified. */
+  trusted?: Map<string, string>;
 }
 
 type Line = { icon: ReactNode; tone?: "up" | "down" | "warn" | "ink"; text: ReactNode; minor?: boolean };
 
-const amt = (v: any, decimals = 6) => {
+/** An amount in its mint's decimals; "?" when the mint couldn't be read (never a guessed scale). */
+const amt = (v: any, decimals: number | undefined) => {
+  if (decimals === undefined) return "?";
   const x = Number(v?.toString?.() ?? v) / 10 ** decimals;
   return fmt(x, x >= 100 ? 0 : 2);
 };
@@ -35,20 +39,22 @@ function describe(ev: FeedEvent, ctx: FeedContext): Line | null {
   const sym = info?.symbol ?? "token";
   const q = info?.quote ?? "USDC";
   const market = <b>{sym}/{q}</b>;
+  const qa = (v: any) => amt(v, info?.quoteDecimals);
+  const ba = (v: any) => amt(v, info?.baseDecimals);
   switch (ev.name) {
     case "mandateCreated": {
       const t = d.terms;
       return {
         icon: <FilePen />, tone: "ink",
-        text: <><Who address={d.issuer} ctx={ctx} /> posted a liquidity SLA for {market}: {amt(t.minDepthQuote)} {q} each side within ±{t.depthWindowBps / 100}%, spread ≤ {t.maxSpreadBps} bps, {amt(t.feePerPeriod)} {q} per compliant period.</>,
+        text: <><Who address={d.issuer} ctx={ctx} /> posted a liquidity SLA for {market}: {qa(t.minDepthQuote)} {q} each side within ±{t.depthWindowBps / 100}%, spread ≤ {t.maxSpreadBps} bps, {qa(t.feePerPeriod)} {q} per compliant period.</>,
       };
     }
     case "leftoverRouted":
-      return { icon: <PackageOpen />, text: <><Who address={ev.signer} ctx={ctx} /> routed {amt(d.amount)} {sym} of unsold launch supply into the {market} SLA&apos;s vault.</> };
+      return { icon: <PackageOpen />, text: <><Who address={ev.signer} ctx={ctx} /> routed {ba(d.amount)} {sym} of unsold launch supply into the {market} SLA&apos;s vault.</> };
     case "mandateAccepted":
-      return { icon: <Handshake />, tone: "up", text: <><Who address={d.maker} ctx={ctx} /> accepted the {market} SLA{info ? <> and posted a {amt(info.terms.bondAmount)} {q} bond</> : null}.</> };
+      return { icon: <Handshake />, tone: "up", text: <><Who address={d.maker} ctx={ctx} /> accepted the {market} SLA{info ? <> and posted a {qa(info.terms.bondAmount)} {q} bond</> : null}.</> };
     case "liquidityDeployed": {
-      const parts = [Number(d.amountQuote) > 0 ? `${amt(d.amountQuote)} ${q} of bids` : null, Number(d.amountBase) > 0 ? `${amt(d.amountBase)} ${sym} of asks` : null].filter(Boolean);
+      const parts = [Number(d.amountQuote) > 0 ? `${qa(d.amountQuote)} ${q} of bids` : null, Number(d.amountBase) > 0 ? `${ba(d.amountBase)} ${sym} of asks` : null].filter(Boolean);
       return { icon: <ArrowDownToLine />, text: <><Who address={ev.signer} ctx={ctx} /> placed {parts.join(" and ")} on the {market} book.</>, minor: true };
     }
     case "liquidityWithdrawn": {
@@ -61,26 +67,32 @@ function describe(ev: FeedEvent, ctx: FeedContext): Line | null {
       const ok = !!d.ok;
       const pushed = Math.abs(Number(d.activeId) - Number(d.anchorBin));
       const cranker = personaOf(ctx.book, d.cranker);
-      const detail = `bids ${amt(d.bidDepthQuote)} · asks ${amt(d.askDepthQuote)} · spread ${d.spreadBps === 65535 ? "—" : `${d.spreadBps} bps`}`;
+      const detail = `bids ${qa(d.bidDepthQuote)} · asks ${qa(d.askDepthQuote)} · spread ${d.spreadBps === 65535 ? "—" : `${d.spreadBps} bps`}`;
       if (cranker?.role === "attacker") {
         return {
           icon: <Swords />, tone: ok ? "up" : "down",
           text: <><Who address={d.cranker} ctx={ctx} /> pushed the {market} price {pushed} bin{pushed === 1 ? "" : "s"} and forced a check in the same transaction. <b style={{ color: ok ? "var(--up)" : "var(--down)" }}>{ok ? "The check still passed." : "The check failed."}</b></>,
         };
       }
-      const read = ev.sentinel;
-      const flagged = !!read && read.diagnosis !== "quoting_normally";
+      const vr = ev.read;
+      const read = vr?.read;
+      const trusted = !!vr && !!ctx.trusted?.has(vr.publisher);
+      const flagged = !!read && trusted && read.diagnosis !== "quoting_normally";
       return {
         icon: <ScanSearch />, tone: ok ? (flagged ? "warn" : "up") : "down", minor: ok && !flagged,
         text: (
           <>
             <Who address={d.cranker} ctx={ctx} /> checked {market}: {ok ? "all obligations met" : <b style={{ color: "var(--down)" }}>obligations missed</b>} <span className="faint">· {detail}</span>
             {read && (
-              <span className="feed-read">
-                Read: <b>{DIAGNOSIS_LABELS[read.diagnosis]}</b>
-                {isFinite(read.breach) && read.source !== "rules" ? <> · breach outlook {Math.round(read.breach * 100)}%</> : null}
-                <span className="faint"> · {judgeName(read.source)}</span>
-              </span>
+              trusted ? (
+                <span className="feed-read">
+                  Read: <b>{DIAGNOSIS_LABELS[read.diagnosis]}</b>
+                  {isFinite(read.breach) && read.source !== "rules" ? <> · breach outlook {Math.round(read.breach * 100)}%</> : null}
+                  <span className="faint"> · {judgeName(read.source)}</span>
+                </span>
+              ) : (
+                <span className="feed-read faint">Unverified read from {shortAddr(vr!.publisher)}: {DIAGNOSIS_LABELS[read.diagnosis].toLowerCase()}</span>
+              )
             )}
           </>
         ),
@@ -88,20 +100,20 @@ function describe(ev: FeedEvent, ctx: FeedContext): Line | null {
     }
     case "periodFinalized": {
       const s = Number(d.status);
-      if (s === 1) return { icon: <CalendarClock />, minor: true, text: <>{market} period {Number(d.period) + 1} closed compliant: {amt(d.feeAccrued)} {q} earned by <Who address={info?.maker} ctx={ctx} />.</> };
+      if (s === 1) return { icon: <CalendarClock />, minor: true, text: <>{market} period {Number(d.period) + 1} closed compliant: {qa(d.feeAccrued)} {q} earned by <Who address={info?.maker} ctx={ctx} />.</> };
       if (s === 2) return { icon: <CalendarClock />, tone: "down", text: <>{market} period {Number(d.period) + 1} closed <b>failed</b>: no fee for <Who address={info?.maker} ctx={ctx} />.</> };
       return { icon: <CalendarClock />, minor: true, text: <>{market} period {Number(d.period) + 1} went unchecked: neither paid nor failed.</> };
     }
     case "makerSlashed":
-      return { icon: <Gavel />, tone: "down", text: <><Who address={d.maker} ctx={ctx} /> was slashed <b>{amt(d.amount)} {q}</b> after {d.consecutiveFailed} failed periods in a row. The {market} SLA is breached.</> };
+      return { icon: <Gavel />, tone: "down", text: <><Who address={d.maker} ctx={ctx} /> was slashed <b>{qa(d.amount)} {q}</b> after {d.consecutiveFailed} failed checked periods with no pass between them. The {market} SLA is breached.</> };
     case "mandateExpired":
       return { icon: <Flag />, text: <>The {market} SLA completed its term.</> };
     case "makerFeesClaimed":
-      return { icon: <Coins />, tone: "up", text: <><Who address={d.maker} ctx={ctx} /> collected {amt(d.amount)} {q} in fees earned on {market}.</> };
+      return { icon: <Coins />, tone: "up", text: <><Who address={d.maker} ctx={ctx} /> collected {qa(d.amount)} {q} in fees earned on {market}.</> };
     case "mandateSettled":
       return {
         icon: <Scale />,
-        text: <>{market} SLA settled: {amt(d.toIssuerBase)} {sym} and {amt(d.toIssuerQuote)} {q} back to <Who address={info?.issuer} ctx={ctx} />, {amt(d.toMakerQuote)} {q} to <Who address={info?.maker} ctx={ctx} />.</>,
+        text: <>{market} SLA settled: {ba(d.toIssuerBase)} {sym} and {qa(d.toIssuerQuote)} {q} back to <Who address={info?.issuer} ctx={ctx} />, {qa(d.toMakerQuote)} {q} to <Who address={info?.maker} ctx={ctx} />.</>,
       };
     default:
       return null;

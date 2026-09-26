@@ -10,14 +10,15 @@ import { usePoll, useNow } from "@/lib/hooks";
 import { useMandateActions } from "@/lib/actions";
 import { loadMandate, type MandateView } from "@/lib/loaders";
 import { connection } from "@/lib/chain";
-import { loadFeed } from "@/lib/feed";
+import { feedStatus, loadFeed } from "@/lib/feed";
+import { latestRead as pickRead, trustedWatchtowers } from "@/lib/trust";
 import { usePersonas, type PersonaBook } from "@/lib/personas";
 import type { FeedEvent } from "@/lib/feed";
 import { explorerUrl } from "@/lib/chain";
 import { incidents, obligations, pct, rating, roundTrip, slaStatus, uptime } from "@/lib/sla";
 import { LiquidityChart, LiquidityLegend } from "@/components/charts";
 import { ActivityFeed } from "@/components/feed";
-import { AgreementSummary, ExecutionPanel, Grade, IncidentList, ObligationRows, Party, SentinelCard, SlaBanner, Schedule, StatusChip, TickLegend, judgeName, nameOf, type AgreementFacts } from "@/components/sla";
+import { AgreementSummary, tokenRisks, ExecutionPanel, Grade, IncidentList, ObligationRows, Party, SentinelCard, SlaBanner, Schedule, StatusChip, TickLegend, judgeName, nameOf, type AgreementFacts } from "@/components/sla";
 import { DIAGNOSIS_LABELS } from "../../../../../../sdk/src/sentinel";
 import { WalletButton } from "@/components/wallet";
 import { Address, InfoTip, Skeleton, StatusIcon, TokenPair, ago, countdown, duration, fmt, fmtFull, fmtPrice, shortAddr } from "@/components/ui";
@@ -74,37 +75,41 @@ function Detail({ v, now, reload, error }: { v: MandateView; now: number; reload
   const { key, m, status, entries, labels, profile } = v;
   const chart = v.book;
   const t = m.terms;
-  const bd = chart?.baseDecimals ?? 6;
-  const qd = chart?.quoteDecimals ?? 6;
+  const bd = v.mints.base.decimals;
+  const qd = v.mints.quote.decimals;
   const q = (x: any) => Number(x.toString()) / 10 ** qd;
   const base = labels[m.baseMint.toBase58()]?.symbol ?? "base";
   const quote = labels[m.quoteMint.toBase58()]?.symbol ?? "quote";
   const openToAll = (m.maker as PublicKey).equals(PublicKey.default);
   const makerName = openToAll ? "The maker" : nameOf(book, m.maker, "The maker");
-  const s = slaStatus(m, status, now, { maker: makerName, quote }, ago);
-  const obl = useMemo(() => obligations(m, status, entries, 60, quote, (x) => fmt(x)), [m, status, entries, quote]);
+  const s = slaStatus(m, status, now, { maker: makerName, quote, decimals: qd }, ago);
+  const obl = useMemo(() => obligations(m, status, entries, 60, quote, (x) => fmt(x), qd), [m, status, entries, quote, qd]);
   const incs = useMemo(() => incidents(m, status, entries), [m, status, entries]);
   const up = uptime(entries);
   const clockPeriod = Math.min(t.durationPeriods - 1, Math.max(0, Math.floor((now - m.startTs.toNumber()) / t.periodSecs)));
   const periodEnd = m.startTs.toNumber() + (m.currentPeriod + 1) * t.periodSecs;
   const clockPeriodEnd = m.startTs.toNumber() + (clockPeriod + 1) * t.periodSecs;
   const { data: events, error: feedError } = usePoll(() => loadFeed(key, 25), [key.toBase58()], 10_000);
+  const trusted = useMemo(() => trustedWatchtowers(book), [book]);
   const ctx = useMemo(() => ({
     book,
-    mandates: { [key.toBase58()]: { symbol: base, quote, maker: m.maker, issuer: m.issuer, terms: t } },
-  }), [book, key, base, quote, m.maker, m.issuer, t]);
+    trusted,
+    mandates: { [key.toBase58()]: { symbol: base, quote, maker: m.maker, issuer: m.issuer, terms: t, baseDecimals: bd, quoteDecimals: qd } },
+  }), [book, trusted, key, base, quote, m.maker, m.issuer, t, bd, qd]);
   const trip = chart ? roundTrip(chart.bins, chart.pair.activeId, ROUND_TRIP_SIZE) : null;
-  // The watchtower's latest advisory read, and its read during each incident.
-  const latestRead = useMemo(() => events?.find((e) => e.sentinel) ?? null, [events]);
+  // The newest current read of this SLA (from a listed watchtower when there is one), and
+  // a listed watchtower's read during each incident.
+  const shown = useMemo(() => pickRead(events, key.toBase58(), trusted, now), [events, key, trusted, now]);
   const causes = useMemo(() => {
     const out: Record<number, string> = {};
     for (const inc of incs) {
-      const ev = events?.find((e) => e.sentinel && e.sentinel.diagnosis !== "quoting_normally" && Number(e.data?.period) >= inc.from && Number(e.data?.period) <= inc.to);
-      if (ev?.sentinel) out[inc.from] = `${DIAGNOSIS_LABELS[ev.sentinel.diagnosis]} (${judgeName(ev.sentinel.source)})`;
+      const ev = events?.find((e) => e.read && trusted.has(e.read.publisher) && e.read.read.mandate === key.toBase58() && e.read.read.diagnosis !== "quoting_normally" && Number(e.data?.period) >= inc.from && Number(e.data?.period) <= inc.to);
+      if (ev?.read) out[inc.from] = `${DIAGNOSIS_LABELS[ev.read.read.diagnosis]} (${judgeName(ev.read.read.source)})`;
     }
     return out;
-  }, [incs, events]);
-  const read = latestRead?.sentinel;
+  }, [incs, events, trusted, key]);
+  const read = shown?.standing === "trusted" ? shown.v.read : null;
+  const history = feedStatus(key);
   const facts: AgreementFacts = {
     base, quote,
     baseDeposit: status === "Open" ? Number(v.balances[0]) / 10 ** bd : null,
@@ -116,6 +121,7 @@ function Detail({ v, now, reload, error }: { v: MandateView; now: number; reload
     maker: openToAll ? null : nameOf(book, m.maker, shortAddr(m.maker)),
     designated: status === "Open" && !openToAll,
     endsAt: status === "Active" ? m.endTs.toNumber() : null,
+    tokenRisks: tokenRisks({ symbol: base, ...v.mints.base }, { symbol: quote, ...v.mints.quote }),
   };
   const plainWords = (
     <div className="card" style={{ marginBottom: 16 }}>
@@ -208,6 +214,22 @@ function Detail({ v, now, reload, error }: { v: MandateView; now: number; reload
                   <span className={`tag ${trip.filled && trip.loss < JUPITER_MAX_LOSS ? "pass" : "fail"}`}>{trip.filled && trip.loss < JUPITER_MAX_LOSS ? "Routable" : "Not routable"}</span>
                 </div>
               )}
+              {chart && status === "Active" && chart.committed.status === "measured" && (
+                <div className="notice subtle">
+                  At the reference right now, with the program&apos;s own arithmetic: bids {fmt(Number(chart.committed.bidDepth) / 10 ** qd)} {quote}, asks {fmt(Number(chart.committed.askDepth) / 10 ** qd)} {quote}, spread {chart.committed.spreadBps === 65535 ? "not measurable" : `${chart.committed.spreadBps} bps`}.
+                  {" "}A check now would <b style={{ color: chart.committed.ok ? "var(--up)" : "var(--down)" }}>{chart.committed.ok ? "pass" : "fail"}</b>, unless the reference moves first.
+                </div>
+              )}
+              {chart && status === "Active" && chart.committed.status === "unknown" && (
+                <div className="notice subtle">Can&apos;t predict the next check: {chart.committed.reason}.</div>
+              )}
+              {chart && status === "Active" && chart.quality !== "ready" && (
+                <div className="notice subtle">
+                  {chart.quality === "warming" && "The reference is holding still until the pair's oracle has a full clean time-weighted window."}
+                  {chart.quality === "tainted" && "Liquidity was just removed from the active bin, so the oracle's recent samples can't be trusted; the reference holds still until a fresh window builds up."}
+                  {chart.quality === "stale" && "No trades have updated the pair's oracle for longer than the time-weighted window; the reference follows the last window it had."}
+                </div>
+              )}
               {chart && chart.targetBin !== chart.refBin && (
                 <div className="notice subtle">
                   The time-weighted price is {chart.targetBin > chart.refBin ? "above" : "below"} the reference, so the reference is moving toward it at up to {t.anchorSpeedBpsPerMin / 100}% a minute.
@@ -227,7 +249,7 @@ function Detail({ v, now, reload, error }: { v: MandateView; now: number; reload
           <div className="card">
             <div className="card-head">
               <span className="h3 row" style={{ gap: 8 }}>{status === "Active" && <span className="live-dot" />}Activity</span>
-              <span className="xs muted">From this SLA&apos;s on-chain events</span>
+              <span className="xs muted">{history.gap || history.pending ? `From on-chain events · ${history.pending ? `${history.pending} still loading` : "some older activity not shown"}` : "From this SLA's on-chain events"}</span>
             </div>
             <div style={{ maxHeight: 520, overflowY: "auto" }}>
               <ActivityFeed events={events} ctx={ctx} max={40} error={feedError} />
@@ -236,7 +258,7 @@ function Detail({ v, now, reload, error }: { v: MandateView; now: number; reload
         </div>
 
         <div className="stack">
-          {status !== "Open" && <SentinelCard read={read ?? null} at={latestRead?.ts ?? null} now={now} />}
+          {status !== "Open" && <SentinelCard shown={shown} now={now} />}
           <LatestCheck v={v} now={now} reload={reload} quote={quote} q={q} />
           <ActionsCard v={v} now={now} reload={reload} periodEnd={periodEnd} book={book} />
           {(status === "Settled" || status === "Breached") && <SettlementReceipt v={v} events={events} base={base} quote={quote} bd={bd} qd={qd} book={book} />}
@@ -357,7 +379,7 @@ function SnapshotButton({ v, reload }: { v: MandateView; reload: () => void }) {
   if (!me) return <WalletButton />;
   return (
     <button className="btn btn-secondary btn-block" disabled={!active || !!busy}
-      onClick={() => run("Check", async (c, me) => [await c.snapshot({ cranker: me, mandate: v.key, m: v.m })], { done: "Check recorded on-chain." }).then(() => setTimeout(reload, 500))}>
+      onClick={() => run("Check", async (c, me, fm) => [await c.snapshot({ cranker: me, mandate: v.key, m: fm ?? v.m })], { done: "Check recorded on-chain.", mandate: v.key }).then(() => setTimeout(reload, 500))}>
       <RefreshCw />
       {busy === "Check" ? "Checking…" : active ? "Check the maker now" : "Checks run while the SLA is live"}
     </button>
@@ -371,31 +393,34 @@ function ActionsCard({ v, now, reload, periodEnd, book }: { v: MandateView; now:
   const { key, m, status, balances } = v;
   const chart = v.book;
   const t = m.terms;
-  const qd = chart?.quoteDecimals ?? 6;
+  const qd = v.mints.quote.decimals;
   const isMaker = !!me && (m.maker as PublicKey).equals(me);
   const isIssuer = !!me && (m.issuer as PublicKey).equals(me);
   const openToAll = (m.maker as PublicKey).equals(PublicKey.default);
   const hasPosition = !(m.position as PublicKey).equals(PublicKey.default);
   const earned = (Number(m.feesEarned) - Number(m.feesClaimed)) / 10 ** qd;
+  const maxFees = Number(t.feePerPeriod) * t.durationPeriods;
+  const underfunded = status === "Open" && Number(balances[2]) < maxFees;
   const after = () => setTimeout(reload, 500);
 
   const accept = () =>
-    run("Accept", async (c, me) => [
+    run("Accept", async (c, me, fm) => [
       createAssociatedTokenAccountIdempotentInstruction(me, getAssociatedTokenAddressSync(m.quoteMint, me, true), me, m.quoteMint),
-      await c.accept({ maker: me, mandate: key, m }),
-    ], { done: "SLA accepted. Your bond is posted and scoring has started." }).then(after);
-  const cancel = () => run("Cancel", async (c) => [await c.cancel({ mandate: key, m })], { done: "Offer cancelled. Funds returned to you." }).then(after);
-  const finalize = () => run("Finalize", async (c) => [await c.finalize({ mandate: key, m })], { done: "Elapsed periods closed out." }).then(after);
+      await c.accept({ maker: me, mandate: key, m: fm ?? m }),
+    ], { done: "SLA accepted. Your bond is posted; scoring starts after the one-minute setup window.", mandate: key }).then(after);
+  const cancel = () => run("Cancel", async (c, _me, fm) => [await c.cancel({ mandate: key, m: fm ?? m })], { done: "Offer cancelled. Funds returned to you.", mandate: key }).then(after);
+  const finalize = () => run("Finalize", async (c, _me, fm) => [await c.finalize({ mandate: key, m: fm ?? m })], { done: "Elapsed periods closed out.", mandate: key }).then(after);
   const openPosition = () =>
-    run("Open position", async (c, me) => {
+    run("Open position", async (c, me, fm) => {
       const lower = chart!.refBin - 35;
       const ixs = [];
       for (let i = binArrayIndex(lower); i <= binArrayIndex(lower + 69); i++) ixs.push(dlmmInitBinArrayIx(m.lbPair, i, me));
       const infos = await connection().getMultipleAccountsInfo(ixs.map((ix) => ix.keys[1].pubkey));
-      return [...ixs.filter((_, i) => !infos[i]), await c.openPosition({ maker: me, mandate: key, m, lowerBinId: lower, width: 70 })];
-    }, { done: "Position opened around the reference price." }).then(after);
+      return [...ixs.filter((_, i) => !infos[i]), await c.openPosition({ maker: me, mandate: key, m: fm ?? m, lowerBinId: lower, width: 70 })];
+    }, { done: "Position opened around the reference price.", mandate: key }).then(after);
   const deploy = () =>
-    run("Deploy", async (c, me) => {
+    run("Deploy", async (c, me, fm) => {
+      const m = fm ?? v.m;
       const pair = chart!.pair;
       const ref = chart!.refBin;
       const bandBins = Math.floor(Math.log(1 + t.bandBps / 10_000) / Math.log(1 + pair.binStep / 10_000)) - 1;
@@ -413,21 +438,21 @@ function ActionsCard({ v, now, reload, periodEnd, book }: { v: MandateView; now:
         ixs.push(await c.addLiquidity({ authority: me, mandate: key, m, pair, amountBase: new BN(((balances[0] * f) / 100n).toString()), amountQuote: new BN(0), minBinId: askMin, maxBinId: hi, strategy: StrategyType.SpotImBalanced }));
       if (!ixs.length) throw new Error("Nothing to deploy: the vault is empty or no bins are allowed right now.");
       return ixs;
-    }, { done: "Inventory placed as bids and asks around the reference." }).then(after);
+    }, { done: "Inventory placed as bids and asks around the reference.", mandate: key }).then(after);
   const pull = (close: boolean) =>
-    run(close ? "Unwind" : "Withdraw", async (c, me) => {
-      const ixs = [await c.removeLiquidity({ authority: me, mandate: key, m, pair: chart!.pair })];
-      if (close) ixs.push(await c.closePosition({ authority: me, mandate: key, m }));
+    run(close ? "Unwind" : "Withdraw", async (c, me, fm) => {
+      const ixs = [await c.removeLiquidity({ authority: me, mandate: key, m: fm ?? m, pair: chart!.pair })];
+      if (close) ixs.push(await c.closePosition({ authority: me, mandate: key, m: fm ?? m }));
       return ixs;
-    }, { done: close ? "Liquidity returned to the vault and the position closed." : "Liquidity returned to the vault." }).then(after);
-  const claim = () => run("Claim", async (c) => [await c.claimMakerFees({ mandate: key, m })], { done: "Earned fees sent to your wallet." }).then(after);
+    }, { done: close ? "Liquidity returned to the vault and the position closed." : "Liquidity returned to the vault.", mandate: key }).then(after);
+  const claim = () => run("Claim", async (c, _me, fm) => [await c.claimMakerFees({ mandate: key, m: fm ?? m })], { done: "Earned fees sent to your wallet.", mandate: key }).then(after);
   const settle = () =>
-    run("Settle", async (c, me) => [
+    run("Settle", async (c, me, fm) => [
       createAssociatedTokenAccountIdempotentInstruction(me, getAssociatedTokenAddressSync(m.baseMint, m.issuer, true), m.issuer, m.baseMint),
       createAssociatedTokenAccountIdempotentInstruction(me, getAssociatedTokenAddressSync(m.quoteMint, m.issuer, true), m.issuer, m.quoteMint),
       createAssociatedTokenAccountIdempotentInstruction(me, getAssociatedTokenAddressSync(m.quoteMint, m.maker, true), m.maker, m.quoteMint),
-      await c.settle({ mandate: key, m }),
-    ], { done: "SLA settled and funds distributed." }).then(after);
+      await c.settle({ mandate: key, m: fm ?? m }),
+    ], { done: "SLA settled and funds distributed.", mandate: key }).then(after);
 
   const role = isIssuer ? "issuer" : isMaker ? "maker" : "observer";
   const b = !!busy;
@@ -454,9 +479,13 @@ function ActionsCard({ v, now, reload, periodEnd, book }: { v: MandateView; now:
         {me && status === "Open" && !isIssuer && (openToAll || isMaker) && (
           <>
             <p className="small muted" style={{ margin: 0 }}>
-              Accepting posts a bond of <b style={{ color: "var(--ink)" }}>{fmtFull(Number(t.bondAmount) / 10 ** qd)}</b> and starts a {t.durationPeriods.toLocaleString("en-US")}-period term. You earn {fmtFull(Number(t.feePerPeriod) / 10 ** qd)} per compliant period.
+              Accepting posts a bond of <b style={{ color: "var(--ink)" }}>{fmtFull(Number(t.bondAmount) / 10 ** qd)}</b> and starts a {t.durationPeriods.toLocaleString("en-US")}-period term after a one-minute setup window. You earn {fmtFull(Number(t.feePerPeriod) / 10 ** qd)} per compliant period, and every fee is already in escrow.
             </p>
-            <button className="btn btn-primary" onClick={accept} disabled={b}>Accept and post bond</button>
+            {underfunded ? (
+              <div className="notice warn small">The fee budget doesn&apos;t cover the whole term yet ({fmtFull(Number(balances[2]) / 10 ** qd)} of {fmtFull(maxFees / 10 ** qd)}), so the program won&apos;t let a maker accept until the issuer tops it up.</div>
+            ) : (
+              <button className="btn btn-primary" onClick={accept} disabled={b}>Accept and post bond</button>
+            )}
           </>
         )}
         {me && status === "Open" && !isIssuer && !openToAll && !isMaker && <p className="small muted" style={{ margin: 0 }}>This offer is reserved for {nameOf(book, m.maker, "a designated maker")}.</p>}

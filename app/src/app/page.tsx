@@ -93,7 +93,7 @@ export default function Landing() {
             <div className="contract">
               <div className="contract-col">
                 <div className="row-between"><span className="h3">Example: the KITE/USDC SLA</span><span className="xs muted mono">test network terms</span></div>
-                <Schedule t={EXAMPLE_TERMS} quote="USDC" />
+                <Schedule t={EXAMPLE_TERMS} quote="USDC" decimals={6} />
               </div>
               <div className="contract-col">
                 <span className="h3">How each clause holds</span>

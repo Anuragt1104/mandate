@@ -33,7 +33,7 @@ import { BN } from "@coral-xyz/anchor";
 import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 import { createAssociatedTokenAccountIdempotentInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { DynamicBondingCurveClient } from "@meteora-ag/dynamic-bonding-curve-sdk";
-import { MandateClient, MandateTerms, pda, statusName } from "../sdk/src";
+import { MandateClient, MandateTerms, getAccounts, pda, statusName } from "../sdk/src";
 import { makerTick, sandwichCheck, tradeOnce, withdrawAll } from "../keeper/agents";
 import { Watchtower } from "../keeper/watchtower";
 import { systemOneFromEnv } from "../sdk/src/systemone";
@@ -266,7 +266,7 @@ async function run() {
   async function liveMarkets(): Promise<PublicKey[]> {
     if (now() - liveCache.at < 60) return liveCache.list;
     const keys = [...new Set(Object.values(s.mandates))].map((a) => new PublicKey(a));
-    const infos = await conn.getMultipleAccountsInfo(keys);
+    const infos = await getAccounts(conn, keys);
     const out: PublicKey[] = [];
     infos.forEach((info, i) => {
       const m = info ? cl(c.watchtower).decodeMandate(info.data) : null;
@@ -287,6 +287,7 @@ async function run() {
     riskWeighted: process.env.RISK_WEIGHTED !== "off",
     sentinel,
     budgetPerMinute: process.env.WATCH_BUDGET ? Number(process.env.WATCH_BUDGET) : undefined,
+    stateFile: path.resolve(__dirname, `../.keeper/watchtower-${CLUSTER_NAME}.json`),
     symbolOf: (mint) => symbolForMint(mint),
     onEvent: async (key, what, d) => {
       if (!symbolOf[key]) {

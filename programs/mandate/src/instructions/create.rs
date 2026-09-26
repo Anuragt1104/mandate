@@ -18,6 +18,7 @@ pub fn validate_terms(t: &MandateTerms) -> Result<()> {
     require!(t.liquidity_lock_secs <= t.period_secs, MandateError::InvalidParams);
     require!(t.max_consecutive_failures >= 1, MandateError::InvalidParams);
     require!(t.slash_bps <= MAX_BPS, MandateError::InvalidParams);
+    t.max_fees()?;
     Ok(())
 }
 
@@ -102,6 +103,8 @@ pub fn create_mandate(ctx: Context<CreateMandate>, id: u64, args: CreateMandateA
         MandateError::PairMintMismatch
     );
     require_keys_eq!(pair.oracle, ctx.accounts.oracle.key(), MandateError::OracleMismatch);
+    // The depth window is counted in whole bins; it must hold at least one ask bin.
+    require!(args.terms.depth_window_bps >= pair.bin_step, MandateError::InvalidParams);
     let sample = dlmm::read_oracle_latest(&ctx.accounts.oracle)?;
     let pool = damm_v2::read_pool(&ctx.accounts.reference_pool)?;
     damm_v2::reference_price(&pool, &base_key, &quote_key)?;

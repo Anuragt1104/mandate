@@ -23,6 +23,9 @@ pub struct AcceptMandate<'info> {
     pub maker_profile: Box<Account<'info, MakerProfile>>,
     #[account(mut, address = mandate.bond_vault)]
     pub bond_vault: Box<Account<'info, TokenAccount>>,
+    /// Must already hold every fee the maker could earn over the term.
+    #[account(address = mandate.fee_vault)]
+    pub fee_vault: Box<Account<'info, TokenAccount>>,
     #[account(mut, token::mint = mandate.quote_mint, token::authority = maker)]
     pub maker_quote: Box<Account<'info, TokenAccount>>,
     pub token_program: Program<'info, Token>,
@@ -36,6 +39,8 @@ pub fn accept_mandate(ctx: Context<AcceptMandate>) -> Result<()> {
         require_keys_eq!(m.maker, maker, MandateError::Unauthorized);
     }
     require_keys_neq!(m.issuer, maker, MandateError::Unauthorized);
+    // A maker accepts a funded promise: the fee vault covers the whole term up front.
+    require!(ctx.accounts.fee_vault.amount >= m.terms.max_fees()?, MandateError::UnderfundedFees);
 
     transfer_in(
         &ctx.accounts.token_program.to_account_info(),
@@ -45,11 +50,13 @@ pub fn accept_mandate(ctx: Context<AcceptMandate>) -> Result<()> {
         m.terms.bond_amount,
     )?;
 
+    // Scoring starts after the setup window, so every period can be checked and paid.
     let now = Clock::get()?.unix_timestamp;
     m.maker = maker;
     m.status = MandateStatus::Active;
-    m.start_ts = now;
-    m.end_ts = now
+    m.start_ts = now.checked_add(SETUP_GRACE_SECS).ok_or(MandateError::MathOverflow)?;
+    m.end_ts = m
+        .start_ts
         .checked_add(m.terms.period_secs as i64 * m.terms.duration_periods as i64)
         .ok_or(MandateError::MathOverflow)?;
     m.current_period = 0;

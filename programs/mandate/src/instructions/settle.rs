@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
 use crate::errors::MandateError;
-use crate::events::{MakerFeesClaimed, MandateSettled};
+use crate::events::{MakerFeesClaimed, MandateSettled, VaultsSwept};
 use crate::mandate_signer_seeds;
 use crate::state::*;
 
@@ -153,5 +153,51 @@ pub fn cancel(ctx: Context<Cancel>) -> Result<()> {
     transfer_out(&tp, &a.quote_vault, &a.issuer_quote, &mi, seeds, a.quote_vault.amount)?;
     transfer_out(&tp, &a.fee_vault, &a.issuer_quote, &mi, seeds, a.fee_vault.amount)?;
     ctx.accounts.mandate.status = MandateStatus::Cancelled;
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct Sweep<'info> {
+    #[account(constraint = matches!(mandate.status, MandateStatus::Settled | MandateStatus::Cancelled) @ MandateError::InvalidStatus)]
+    pub mandate: Box<Account<'info, Mandate>>,
+    #[account(mut, address = mandate.base_vault)]
+    pub base_vault: Box<Account<'info, TokenAccount>>,
+    #[account(mut, address = mandate.quote_vault)]
+    pub quote_vault: Box<Account<'info, TokenAccount>>,
+    #[account(mut, address = mandate.fee_vault)]
+    pub fee_vault: Box<Account<'info, TokenAccount>>,
+    #[account(mut, address = mandate.bond_vault)]
+    pub bond_vault: Box<Account<'info, TokenAccount>>,
+    #[account(mut, token::mint = mandate.base_mint, token::authority = mandate.issuer)]
+    pub issuer_base: Box<Account<'info, TokenAccount>>,
+    #[account(mut, token::mint = mandate.quote_mint, token::authority = mandate.issuer)]
+    pub issuer_quote: Box<Account<'info, TokenAccount>>,
+    /// Only the maker ever funds the bond vault, so anything there after settlement is
+    /// the maker's. A cancelled mandate never had a bond: it goes to the issuer.
+    #[account(mut, token::mint = mandate.quote_mint, constraint = bond_owner_quote.owner == bond_owner(&mandate) @ MandateError::InvalidTokenAccount)]
+    pub bond_owner_quote: Box<Account<'info, TokenAccount>>,
+    pub token_program: Program<'info, Token>,
+}
+
+fn bond_owner(m: &Mandate) -> Pubkey {
+    if m.status == MandateStatus::Settled { m.maker } else { m.issuer }
+}
+
+/// Permissionless: tokens sent to a mandate's vaults after it was settled or cancelled
+/// go to fixed recipients (inventory and fee vaults to the issuer, the bond vault to the
+/// maker), so nothing is stranded in a finished mandate.
+pub fn sweep(ctx: Context<Sweep>) -> Result<()> {
+    let a = &ctx.accounts;
+    let m = &a.mandate;
+    let (base, quote, fees, bond) = (a.base_vault.amount, a.quote_vault.amount, a.fee_vault.amount, a.bond_vault.amount);
+    require!(base > 0 || quote > 0 || fees > 0 || bond > 0, MandateError::InsufficientVault);
+    let tp = a.token_program.to_account_info();
+    let mi = a.mandate.to_account_info();
+    mandate_signer_seeds!(m, id_bytes, bump, seeds);
+    transfer_out(&tp, &a.base_vault, &a.issuer_base, &mi, seeds, base)?;
+    transfer_out(&tp, &a.quote_vault, &a.issuer_quote, &mi, seeds, quote)?;
+    transfer_out(&tp, &a.fee_vault, &a.issuer_quote, &mi, seeds, fees)?;
+    transfer_out(&tp, &a.bond_vault, &a.bond_owner_quote, &mi, seeds, bond)?;
+    emit!(VaultsSwept { mandate: m.key(), to_issuer_base: base, to_issuer_quote: quote.saturating_add(fees), to_bond_owner: bond });
     Ok(())
 }

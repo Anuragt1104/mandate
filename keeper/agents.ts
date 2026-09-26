@@ -12,8 +12,9 @@
 import { BN } from "@coral-xyz/anchor";
 import { Connection, Keypair, PublicKey, TransactionInstruction } from "@solana/web3.js";
 import { AccountLayout, createAssociatedTokenAccountIdempotentInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
-import { MandateClient, StrategyType, anchorState, binArrayIndex, binArraysCovering, decodeLbPair, decodeOracleLatest, dlmmInitBinArrayIx, dlmmSwapIx, pda, projectAnchor, statusName } from "../sdk/src";
+import { MandateClient, StrategyType, anchorState, binArrayIndex, binArraysCovering, decodeLbPair, decodeOracleLatest, dlmmInitBinArrayIx, dlmmSwapIx, getAccounts, loadAccounts, pda, projectAnchor, statusName } from "../sdk/src";
 import { chainTime, fetchMandate, fetchMandates, fetchPair, sendIxs } from "./common";
+import { catchUp, closeOut, periodsBehind } from "./lifecycle";
 
 const POSITION_WIDTH = 70;
 const RECENTER_MARGIN = 12;
@@ -122,7 +123,7 @@ async function existingBinArrays(conn: Connection, lbPair: PublicKey, activeId: 
   const hi = direction === "down" ? activeId + 70 : activeId + 210;
   let candidates = binArraysCovering(lbPair, lo, hi);
   if (direction === "down") candidates = candidates.reverse();
-  const infos = await conn.getMultipleAccountsInfo(candidates);
+  const infos = await getAccounts(conn, candidates);
   return candidates.filter((_, i) => infos[i]);
 }
 
@@ -167,16 +168,17 @@ export async function tradeOnce(
   return { buy, quoteSize, text: `${buy ? "bought" : "sold"} ${Math.round(quoteSize).toLocaleString("en-US")} USDC worth` };
 }
 
-/** The mandate list, rediscovered once a minute; in between, one batched read refreshes it. */
+/** The mandates still in play, rediscovered once a minute; in between, chunked reads refresh them. */
 let watchList: { at: number; keys: PublicKey[] } = { at: 0, keys: [] };
 async function watchedMandates(conn: Connection, client: MandateClient) {
+  const live = (m: any) => !["Settled", "Cancelled"].includes(statusName(m.status));
   if (Date.now() - watchList.at > 60_000) {
-    const all = await fetchMandates(conn, client);
+    const all = (await fetchMandates(conn, client)).filter((x) => live(x.m));
     watchList = { at: Date.now(), keys: all.map((x) => x.pubkey) };
     return all;
   }
-  const infos = await conn.getMultipleAccountsInfo(watchList.keys);
-  return watchList.keys.flatMap((pubkey, i) => (infos[i] ? [{ pubkey, m: client.decodeMandate(infos[i]!.data) }] : []));
+  const { infos } = await loadAccounts(conn, watchList.keys, { partial: true });
+  return watchList.keys.flatMap((pubkey, i) => (infos[i] ? [{ pubkey, m: client.decodeMandate(infos[i]!.data) }] : [])).filter((x) => live(x.m));
 }
 
 /** Watchtower state: next check time per mandate, drawn at random so makers can't predict it. */
@@ -200,32 +202,17 @@ export async function crankOnce(
         const period = m.terms.periodSecs as number;
         const periodNow = Math.floor((now - m.startTs.toNumber()) / period);
         if (!state.has(key)) state.set(key, now + Math.random() * (period / samples));
-        if (now >= state.get(key)!) {
-          await sendIxs(conn, cranker, [await client.snapshot({ cranker: cranker.publicKey, mandate: pubkey, m })]);
+        if (periodsBehind(m, now) > 0) {
+          await catchUp(conn, cranker, client, pubkey, m, now);
+          await opts.onEvent?.(key, `closed out periods through ${periodNow}`);
+        } else if (now >= m.startTs.toNumber() && now >= state.get(key)!) {
+          await sendIxs(conn, cranker, [await client.snapshot({ cranker: cranker.publicKey, mandate: pubkey, m })], [], { idempotent: true, deadlineMs: 45_000 });
           state.set(key, now + (Math.random() * 2 * period) / samples);
           await opts.onEvent?.(key, `checked (period ${periodNow + 1})`);
-        } else if (periodNow > m.currentPeriod) {
-          await sendIxs(conn, cranker, [await client.finalize({ mandate: pubkey, m })]);
-          await opts.onEvent?.(key, `closed out periods through ${periodNow}`);
         }
-      } else if (status === "Breached" || status === "Expired") {
-        if (!(m.position as PublicKey).equals(PublicKey.default)) {
-          const pair = await fetchPair(conn, m.lbPair);
-          await sendIxs(conn, cranker, [
-            await client.removeLiquidity({ authority: cranker.publicKey, mandate: pubkey, m, pair }),
-            await client.closePosition({ authority: cranker.publicKey, mandate: pubkey, m }),
-          ]);
-          await opts.onEvent?.(key, `unwound the ${status.toLowerCase()} mandate`);
-        } else {
-          const ata = (mint: PublicKey, owner: PublicKey) => getAssociatedTokenAddressSync(mint, owner, true);
-          await sendIxs(conn, cranker, [
-            createAssociatedTokenAccountIdempotentInstruction(cranker.publicKey, ata(m.baseMint, m.issuer), m.issuer, m.baseMint),
-            createAssociatedTokenAccountIdempotentInstruction(cranker.publicKey, ata(m.quoteMint, m.issuer), m.issuer, m.quoteMint),
-            createAssociatedTokenAccountIdempotentInstruction(cranker.publicKey, ata(m.quoteMint, m.maker), m.maker, m.quoteMint),
-            await client.settle({ mandate: pubkey, m }),
-          ]);
-          await opts.onEvent?.(key, `settled the ${status.toLowerCase()} mandate`);
-        }
+      } else {
+        const did = await closeOut(conn, cranker, client, pubkey, m);
+        if (did) await opts.onEvent?.(key, did);
       }
     } catch (e: any) {
       await opts.onEvent?.(key, `error: ${e.message?.split("\n")[0] ?? e}`);

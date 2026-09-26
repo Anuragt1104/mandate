@@ -18,7 +18,13 @@ import {
   pda,
   binArraysCovering,
   failoverFetch,
+  loadAccounts,
+  measureAccounts,
+  referenceQuality,
   PUBLIC_FALLBACKS,
+  type BinInfo,
+  type CommittedResult,
+  type ReferenceQuality,
 } from "../../../sdk/src";
 
 export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ?? "http://127.0.0.1:8899";
@@ -49,6 +55,19 @@ export function connection(): Connection {
   if (!_conn) _conn = new Connection(RPC_URL, { commitment: "confirmed", disableRetryOnRateLimit: true, fetch: rpcFetch as any });
   return _conn;
 }
+
+/**
+ * For wallet actions: the same endpoints, but the proxy never answers from its cache, so a
+ * transaction is built from the account state as it is now, not as a dashboard last saw it.
+ */
+let _freshFetch: ReturnType<typeof failoverFetch> | null = null;
+export const freshFetch = (input: any, init?: any): Promise<Response> => {
+  if (!_freshFetch) {
+    const proxy = USE_PROXY && typeof window !== "undefined" ? [`${window.location.origin}/api/rpc?fresh=1`] : [];
+    _freshFetch = failoverFetch([...proxy, ...DIRECT], { timeoutMs: 10_000, hedgeMs: 2_000, rounds: 2 });
+  }
+  return _freshFetch(input, init);
+};
 
 /** Read-only client (a throwaway wallet; never signs). */
 let _ro: MandateClient | null = null;
@@ -81,6 +100,13 @@ export function explorerAddress(address: PublicKey | string) {
 export interface TokenLabel {
   symbol: string;
   name: string;
+}
+
+/** What the mint account says: exact decimals and who can still mint or freeze. */
+export interface MintInfo {
+  decimals: number;
+  mintAuthority: string | null;
+  freezeAuthority: string | null;
 }
 
 const MPL_TOKEN_METADATA = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
@@ -122,7 +148,7 @@ export async function fetchTokenLabels(mints: PublicKey[]): Promise<Record<strin
     const pdas = missing.map(
       (m) => PublicKey.findProgramAddressSync([Buffer.from("metadata"), MPL_TOKEN_METADATA.toBuffer(), new PublicKey(m).toBuffer()], MPL_TOKEN_METADATA)[0],
     );
-    const infos = await connection().getMultipleAccountsInfo(pdas);
+    const { infos } = await loadAccounts(connection(), pdas, { partial: true });
     missing.forEach((m, i) => {
       const info = infos[i];
       let label: TokenLabel = { symbol: short(m, 3), name: m };
@@ -195,19 +221,33 @@ export async function fetchMakerProfiles() {
 }
 
 export async function tokenAmounts(accounts: PublicKey[]): Promise<bigint[]> {
-  const infos = await connection().getMultipleAccountsInfo(accounts);
+  const { infos } = await loadAccounts(connection(), accounts);
   return infos.map((i) => (i ? AccountLayout.decode(i.data).amount : 0n));
 }
 
-const decimalsCache = new Map<string, number>();
+const mintCache = new Map<string, MintInfo>();
+/**
+ * Mint facts for every mint asked, read in chunks and cached. Decimals are never assumed:
+ * a mint that can't be read is missing from the result, and callers show amounts as unknown.
+ */
+export async function fetchMints(mints: PublicKey[]): Promise<Record<string, MintInfo>> {
+  const missing = [...new Set(mints.map((m) => m.toBase58()))].filter((m) => !mintCache.has(m));
+  if (missing.length) {
+    const { infos } = await loadAccounts(connection(), missing.map((m) => new PublicKey(m)), { partial: true });
+    missing.forEach((m, i) => {
+      const d = infos[i]?.data;
+      if (!d || d.length < 82) return;
+      const opt = (o: number) => (d.readUInt32LE(o) === 1 ? new PublicKey(d.subarray(o + 4, o + 36)).toBase58() : null);
+      mintCache.set(m, { decimals: d[44], mintAuthority: opt(0), freezeAuthority: opt(46) });
+    });
+  }
+  return Object.fromEntries(mints.flatMap((m) => (mintCache.has(m.toBase58()) ? [[m.toBase58(), mintCache.get(m.toBase58())!]] : [])));
+}
+
 export async function mintDecimals(mint: PublicKey): Promise<number> {
-  const key = mint.toBase58();
-  const hit = decimalsCache.get(key);
-  if (hit !== undefined) return hit;
-  const info = await connection().getAccountInfo(mint);
-  if (!info) return 6;
-  decimalsCache.set(key, info.data[44]);
-  return info.data[44];
+  const info = (await fetchMints([mint]))[mint.toBase58()];
+  if (!info) throw new Error(`could not read the mint ${mint.toBase58()}`);
+  return info.decimals;
 }
 
 export interface BookBin {
@@ -224,7 +264,8 @@ export interface BookBin {
 export async function fetchBook(m: any) {
   const conn = connection();
   const hasPos = !(m.position as PublicKey).equals(PublicKey.default);
-  const [pairInfo, dammInfo, oracleInfo, posInfo] = await conn.getMultipleAccountsInfo(
+  const { infos: [pairInfo, dammInfo, oracleInfo, posInfo], slot } = await loadAccounts(
+    conn,
     hasPos ? [m.lbPair, m.referencePool, m.oracle, m.position] : [m.lbPair, m.referencePool, m.oracle],
   );
   if (!pairInfo) return null;
@@ -239,14 +280,18 @@ export async function fetchBook(m: any) {
     dammUi = toUiPrice(p.tokenA.equals(m.baseMint) ? atomic : 1 / atomic);
   }
   const sample = oracleInfo ? decodeOracleLatest(oracleInfo.data) : null;
-  const projected = projectAnchor(anchorState(m), sample, m.terms, pair.binStep, Math.floor(Date.now() / 1000));
+  const now = Math.floor(Date.now() / 1000);
+  const projected = projectAnchor(anchorState(m), sample, m.terms, pair.binStep, now);
+  const quality: ReferenceQuality = referenceQuality(anchorState(m), sample, m.terms, now);
   const refBin = projected.bin;
   const refUi = binUi(refBin);
   const bins: BookBin[] = [];
+  // What the next check would record, with the program's own arithmetic (display bins below are for the chart).
+  let committed: CommittedResult = hasPos ? { status: "unknown", reason: "the position could not be read" } : measureAccounts(m, pair.binStep, null, new Map(), refBin);
   if (hasPos) {
     if (posInfo) {
       const pos = decodePosition(posInfo.data);
-      const arrays = await conn.getMultipleAccountsInfo(binArraysCovering(m.lbPair, pos.lowerBinId, pos.upperBinId));
+      const { infos: arrays } = await loadAccounts(conn, binArraysCovering(m.lbPair, pos.lowerBinId, pos.upperBinId));
       const byIndex = new Map<number, ReturnType<typeof decodeBinArray>>();
       arrays.forEach((a) => {
         if (a) {
@@ -254,6 +299,7 @@ export async function fetchBook(m: any) {
           byIndex.set(d.index, d);
         }
       });
+      committed = measureAccounts(m, pair.binStep, pos, new Map<number, BinInfo[]>([...byIndex].map(([i, d]) => [i, d.bins])), refBin);
       for (let b = pos.lowerBinId; b <= pos.upperBinId; b++) {
         const share = pos.shares[b - pos.lowerBinId];
         const idx = Math.floor(b / 70);
@@ -268,7 +314,7 @@ export async function fetchBook(m: any) {
     }
   }
   const activeUi = binUi(pair.activeId);
-  return { pair, bins, refBin, refUi, targetBin: projected.target, dammUi, activeUi, baseDecimals: bd, quoteDecimals: qd };
+  return { pair, bins, refBin, refUi, targetBin: projected.target, dammUi, activeUi, baseDecimals: bd, quoteDecimals: qd, committed, quality, slot, readAt: now };
 }
 
 export { pda };

@@ -1,0 +1,42 @@
+
+> build
+> anchor build && cp target/idl/mandate.json sdk/idl/mandate.json
+
+[2026-09-26T11:19:16.934208000Z WARN  cargo_build_sbf] Package 'mandate' has two crate types defined: cdylib and lib. This setting precludes link-time optimizations (LTO). Use cdylib for programs to be deployed and rlib for packages to be imported by other programs as libraries.
+Error: Function _ZN12hybrid_array7from_fn50_$LT$impl$u20$hybrid_array..Array$LT$T$C$U$GT$$GT$11try_from_fn17h0a09cc10f08d9966E Stack offset of 8192 exceeded max offset of 4096 by 4096 bytes, please minimize large stack variables. Estimated function frame size: 8192 bytes. Exceeding the maximum stack offset may cause undefined behavior during execution.
+
+Error: Function _ZN88_$LT$$u5b$u16$u3b$$u20$2048$u5d$$u20$as$u20$crypto_common..hazmat..SerializableState$GT$9serialize17h2d34dcc4321bce9dE Stack offset of 4224 exceeded max offset of 4096 by 128 bytes, please minimize large stack variables. Estimated function frame size: 4288 bytes. Exceeding the maximum stack offset may cause undefined behavior during execution.
+
+Error: Function _ZN88_$LT$$u5b$u16$u3b$$u20$2048$u5d$$u20$as$u20$crypto_common..hazmat..SerializableState$GT$11deserialize17h09ca824ef6c1e578E Stack offset of 4216 exceeded max offset of 4096 by 120 bytes, please minimize large stack variables. Estimated function frame size: 4224 bytes. Exceeding the maximum stack offset may cause undefined behavior during execution.
+
+Error: Function _ZN88_$LT$$u5b$u16$u3b$$u20$4096$u5d$$u20$as$u20$crypto_common..hazmat..SerializableState$GT$9serialize17hd2b13d894245997cE Stack offset of 8320 exceeded max offset of 4096 by 4224 bytes, please minimize large stack variables. Estimated function frame size: 8384 bytes. Exceeding the maximum stack offset may cause undefined behavior during execution.
+
+Error: Function _ZN88_$LT$$u5b$u16$u3b$$u20$4096$u5d$$u20$as$u20$crypto_common..hazmat..SerializableState$GT$11deserialize17h2a4f3e0743857f09E Stack offset of 8312 exceeded max offset of 4096 by 4216 bytes, please minimize large stack variables. Estimated function frame size: 8320 bytes. Exceeding the maximum stack offset may cause undefined behavior during execution.
+
+Error: Function _ZN88_$LT$$u5b$u32$u3b$$u20$1024$u5d$$u20$as$u20$crypto_common..hazmat..SerializableState$GT$9serialize17h3de1f295955c2615E Stack offset of 4224 exceeded max offset of 4096 by 128 bytes, please minimize large stack variables. Estimated function frame size: 4288 bytes. Exceeding the maximum stack offset may cause undefined behavior during execution.
+
+Error: Function _ZN88_$LT$$u5b$u32$u3b$$u20$1024$u5d$$u20$as$u20$crypto_common..hazmat..SerializableState$GT$11deserialize17hcd881794aca21309E Stack offset of 4216 exceeded max offset of 4096 by 120 bytes, please minimize large stack variables. Estimated function frame size: 4224 bytes. Exceeding the maximum stack offset may cause undefined behavior during execution.
+
+Error: Function _ZN88_$LT$$u5b$u32$u3b$$u20$2048$u5d$$u20$as$u20$crypto_common..hazmat..SerializableState$GT$9serialize17he0cd1ca6da2bcdc7E Stack offset of 8320 exceeded max offset of 4096 by 4224 bytes, please minimize large stack variables. Estimated function frame size: 8384 bytes. Exceeding the maximum stack offset may cause undefined behavior during execution.
+
+Error: Function _ZN88_$LT$$u5b$u32$u3b$$u20$2048$u5d$$u20$as$u20$crypto_common..hazmat..SerializableState$GT$11deserialize17h935b1f14d2f227bcE Stack offset of 8312 exceeded max offset of 4096 by 4216 bytes, please minimize large stack variables. Estimated function frame size: 8320 bytes. Exceeding the maximum stack offset may cause undefined behavior during execution.
+
+Error: Function _ZN87_$LT$$u5b$u64$u3b$$u20$512$u5d$$u20$as$u20$crypto_common..hazmat..SerializableState$GT$9serialize17h9bcfe7f6842df1f1E Stack offset of 4224 exceeded max offset of 4096 by 128 bytes, please minimize large stack variables. Estimated function frame size: 4288 bytes. Exceeding the maximum stack offset may cause undefined behavior during execution.
+
+Error: Function _ZN87_$LT$$u5b$u64$u3b$$u20$512$u5d$$u20$as$u20$crypto_common..hazmat..SerializableState$GT$11deserialize17ha4cf41e2fcb4a3c1E Stack offset of 4216 exceeded max offset of 4096 by 120 bytes, please minimize large stack variables. Estimated function frame size: 4224 bytes. Exceeding the maximum stack offset may cause undefined behavior during execution.
+
+Error: Function _ZN88_$LT$$u5b$u64$u3b$$u20$1024$u5d$$u20$as$u20$crypto_common..hazmat..SerializableState$GT$9serialize17hcb53da5e74a1c9b7E Stack offset of 8320 exceeded max offset of 4096 by 4224 bytes, please minimize large stack variables. Estimated function frame size: 8384 bytes. Exceeding the maximum stack offset may cause undefined behavior during execution.
+
+Error: Function _ZN88_$LT$$u5b$u64$u3b$$u20$1024$u5d$$u20$as$u20$crypto_common..hazmat..SerializableState$GT$11deserialize17h32ee385f0120968fE Stack offset of 8312 exceeded max offset of 4096 by 4216 bytes, please minimize large stack variables. Estimated function frame size: 8320 bytes. Exceeding the maximum stack offset may cause undefined behavior during execution.
+
+Error: Function _ZN88_$LT$$u5b$u128$u3b$$u20$256$u5d$$u20$as$u20$crypto_common..hazmat..SerializableState$GT$11deserialize17h645e37fc802b28d2E Stack offset of 4216 exceeded max offset of 4096 by 120 bytes, please minimize large stack variables. Estimated function frame size: 4224 bytes. Exceeding the maximum stack offset may cause undefined behavior during execution.
+
+Error: Function _ZN88_$LT$$u5b$u128$u3b$$u20$512$u5d$$u20$as$u20$crypto_common..hazmat..SerializableState$GT$9serialize17hb3cb2fe1f0787f69E Stack offset of 4224 exceeded max offset of 4096 by 128 bytes, please minimize large stack variables. Estimated function frame size: 4288 bytes. Exceeding the maximum stack offset may cause undefined behavior during execution.
+
+Error: Function _ZN88_$LT$$u5b$u128$u3b$$u20$512$u5d$$u20$as$u20$crypto_common..hazmat..SerializableState$GT$11deserialize17hc28af0f8aeea44efE Stack offset of 8312 exceeded max offset of 4096 by 4216 bytes, please minimize large stack variables. Estimated function frame size: 8320 bytes. Exceeding the maximum stack offset may cause undefined behavior during execution.
+
+    Finished `release` profile [optimized] target(s) in 0.44s
+[2026-09-26T11:19:17.465201000Z WARN  cargo_build_sbf::post_processing] The following functions are undefined and not known syscalls ["abort", "sol_log_", "sol_memcmp_", "sol_memcpy_", "sol_log_data", "sol_invoke_signed_rust", "sol_get_clock_sysvar", "sol_get_rent_sysvar", "sol_memset_", "sol_try_find_program_address", "sol_create_program_address", "sol_log_pubkey", "sol_sha256"].
+[2026-09-26T11:19:17.465230000Z WARN  cargo_build_sbf::post_processing]          Calling them will trigger a run-time error.
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.29s
+     Running unittests src/lib.rs (/Users/anurag1104/Desktop/mandate/target/debug/deps/mandate-728aa397b0f262de)

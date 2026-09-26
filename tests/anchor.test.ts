@@ -157,3 +157,63 @@ describe("reference price (DLMM oracle TWAP, speed-limited)", () => {
     expect(Math.abs(m().anchor.bin - before.bin)).to.be.lte(4);
   });
 });
+
+describe("reference price: same-second taint (review R1)", () => {
+  it("an oracle sample stamped in the same second as a removal cannot anchor a window", async () => {
+    const svm = startSvm();
+    const client = new MandateClient(mandateProgram());
+    const issuer = fundedKeypair(svm), maker = fundedKeypair(svm), trader = fundedKeypair(svm);
+    const base = createMint(svm, issuer, 6), quote = createMint(svm, issuer, 6);
+    for (const mint of [base, quote]) {
+      mintTo(svm, issuer, mint, issuer.publicKey, 10n ** 12n);
+      mintTo(svm, issuer, mint, trader.publicKey, 10n ** 12n);
+    }
+    mintTo(svm, issuer, quote, maker.publicKey, 10n ** 12n);
+    const pair = createDlmmPair(svm, issuer, base, quote, 25, 0);
+    initBinArrays(svm, issuer, pair.lbPair, [-1, 0, 1, 2, 3]);
+    const ref = Keypair.generate().publicKey;
+    writeReferencePool(svm, ref, base, quote, ONE_Q64);
+    const key = pda.mandate(issuer.publicKey, base, 90005);
+    const m = () => client.decodeMandate(svm.getAccount(key)!.data);
+    const lb = () => decodeLbPair(svm.getAccount(pair.lbPair)!.data);
+    const snap = async () => send(svm, trader, [await client.snapshot({ cranker: trader.publicKey, mandate: key, m: m() })]);
+    const nudge = () => dlmmSwap(svm, trader, pair, 1_000n, false, [0, 1]);
+    send(svm, issuer, [
+      await client.createMandate({ issuer: issuer.publicKey, baseMint: base, quoteMint: quote, lbPair: pair.lbPair, referencePool: ref,
+        id: 90005, terms: TERMS, baseDeposit: U(5_000), quoteDeposit: U(5_000), feeBudget: U(24) }),
+    ]);
+    send(svm, maker, [await client.accept({ maker: maker.publicKey, mandate: key, m: m() })]);
+    send(svm, maker, [await client.openPosition({ maker: maker.publicKey, mandate: key, m: m(), lowerBinId: -35, width: 70 })]);
+    send(svm, maker, [
+      await client.addLiquidity({ authority: maker.publicKey, mandate: key, m: m(), pair: lb(), amountBase: U(1_300), amountQuote: U(1_300), minBinId: -12, maxBinId: 12 }),
+    ]);
+    nudge();
+    warp(svm, 400);
+    nudge(); // oracle sample at t
+    await snap();
+    const before = m().anchor.bin;
+    const sample = oracleCumulative(svm, pair.oracle);
+    // Removal in the same second as that sample.
+    send(svm, maker, [
+      await client.removeLiquidity({ authority: maker.publicKey, mandate: key, m: m(), pair: lb(), fromBinId: readActiveId(svm, pair.lbPair), toBinId: 34, claimFees: false }),
+    ]);
+    expect(Number(m().anchor.taintTs)).to.eq(sample.ts);
+    warp(svm, 600);
+    dlmmGoToBin(svm, trader, pair.lbPair, 200, 0, 2);
+    dlmmSwap(svm, trader, pair, 1_000n, true, [2, 1, 0]);
+    await snap();
+    expect(m().anchor.target).to.be.lt(150, "the misattributed interval is not used");
+    expect(m().anchor.bin).to.eq(before);
+    // The first later sample is only a baseline; a full clean window after it is needed.
+    const real = readActiveId(svm, pair.lbPair);
+    const later = () => dlmmSwap(svm, trader, pair, 1_000n, true, [2, 1, 0]);
+    warp(svm, 299);
+    later();
+    await snap();
+    expect(m().anchor.bin).to.eq(before, "299 s is not a full window");
+    warp(svm, 2);
+    later();
+    await snap();
+    expect(m().anchor.target).to.be.within(real - 1, real + 1);
+  });
+});

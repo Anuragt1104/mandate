@@ -12,6 +12,12 @@ export const MANDATE_PROGRAM_ID = new PublicKey("3YetFVe4F6MuYaHH7pAmTCZjtMnunQT
 export const DLMM_PROGRAM_ID = new PublicKey("LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo");
 export const DAMM_V2_PROGRAM_ID = new PublicKey("cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG");
 export const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+
+/** Program constants the off-chain code must agree with (programs/mandate/src/constants.rs). */
+/** Scoring starts this long after acceptance (`start_ts`); checks before it record nothing. */
+export const SETUP_GRACE_SECS = 60;
+export const MAX_FINALIZE_PER_CALL = 32;
+export const SPREAD_SIZE_DIVISOR = 10n;
 export const DLMM_EVENT_AUTHORITY = PublicKey.findProgramAddressSync([Buffer.from("__event_authority")], DLMM_PROGRAM_ID)[0];
 
 export const BINS_PER_ARRAY = 70;
@@ -180,6 +186,21 @@ export function decodeBinArray(data: Buffer | Uint8Array): { index: number; bins
   return { index: Number(d.readBigInt64LE(8)), bins };
 }
 
+/**
+ * The program's committed-liquidity verdict for a mandate from decoded accounts (see
+ * measure.ts): the position (null when none is open) and the bin arrays read, by index.
+ * `anchorBin` defaults to the mandate's current reference.
+ */
+export function measureAccounts(m: any, binStep: number, position: PositionInfo | null, arrays: Map<number, BinInfo[]>, anchorBin: number = m.anchor.bin): CommittedResult {
+  return measureCommitted({
+    anchorBin,
+    binStep,
+    position: position ? { lower: position.lowerBinId, upper: position.upperBinId, shares: position.shares } : null,
+    binArray: (i) => arrays.get(i),
+    terms: { minDepthQuote: BigInt(m.terms.minDepthQuote.toString()), depthWindowBps: m.terms.depthWindowBps, maxSpreadBps: m.terms.maxSpreadBps },
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Reference price ("anchor"): mirror of programs/mandate/src/anchor.rs
 // ---------------------------------------------------------------------------
@@ -238,9 +259,10 @@ export function projectAnchor(state: AnchorState, sample: OracleSample | null, t
 
 function observe(a: AnchorState, s: OracleSample | null, window: number): number | null {
   if (!s || s.ts <= 0) return null;
-  if (a.startTs < a.taintTs) (a.startTs = 0), (a.startCum = 0n);
-  if (a.nextTs < a.taintTs) (a.nextTs = 0), (a.nextCum = 0n);
-  if (s.ts < a.taintTs) return null;
+  // Mirrors anchor.rs: samples at or before a taint may include misattributed time.
+  if (a.startTs !== 0 && a.startTs <= a.taintTs) (a.startTs = 0), (a.startCum = 0n);
+  if (a.nextTs !== 0 && a.nextTs <= a.taintTs) (a.nextTs = 0), (a.nextCum = 0n);
+  if (s.ts <= a.taintTs) return null;
   if (a.nextTs === 0) (a.nextTs = s.ts), (a.nextCum = s.cumulative);
   if (a.startTs === 0) (a.startTs = a.nextTs), (a.startCum = a.nextCum);
   if (s.ts - a.nextTs >= window) {
@@ -252,6 +274,29 @@ function observe(a: AnchorState, s: OracleSample | null, window: number): number
   const span = s.ts - a.startTs;
   if (span < window || span <= 0) return null;
   return Number(floorDiv(s.cumulative - a.startCum, BigInt(span)));
+}
+
+export type ReferenceQuality =
+  /** A full clean TWAP window backs the reference. */
+  | "ready"
+  /** No full window since creation or the last taint yet; the reference holds still. */
+  | "warming"
+  /** Liquidity was removed and no oracle sample has landed since; the reference holds still. */
+  | "tainted"
+  /** The pair's oracle hasn't been updated (no swaps) for longer than the TWAP window. */
+  | "stale";
+
+/**
+ * What currently backs the reference price. The program never moves the reference on a
+ * window that isn't "ready"; this makes that state visible instead of implying freshness.
+ */
+export function referenceQuality(state: AnchorState, sample: OracleSample | null, terms: MandateTerms, now: number): ReferenceQuality {
+  const a = { ...state };
+  if (!sample) return "warming";
+  if (a.taintTs > 0 && sample.ts <= a.taintTs) return "tainted";
+  if (observe(a, sample, terms.anchorTwapSecs) === null) return "warming";
+  if (now - sample.ts > terms.anchorTwapSecs) return "stale";
+  return "ready";
 }
 
 function step(a: AnchorState, target: number, now: number, speed: number, binStep: number) {
@@ -372,6 +417,7 @@ export class MandateClient {
         mandate: p.mandate,
         makerProfile: pda.makerProfile(p.maker),
         bondVault: p.m.bondVault,
+        feeVault: p.m.feeVault,
         makerQuote: getAssociatedTokenAddressSync(p.m.quoteMint, p.maker, true),
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
@@ -575,6 +621,41 @@ export class MandateClient {
       .instruction();
   }
 
+  /** Once the mandate has ended, leftover supply in the router goes to the issuer. */
+  async recoverLeftover(p: { routerAuthority: PublicKey; mandate: PublicKey; m: any }) {
+    const router = pda.router(p.routerAuthority);
+    return this.program.methods
+      .recoverLeftover()
+      .accountsStrict({
+        router,
+        launch: pda.launch(router, p.m.baseMint),
+        mandate: p.mandate,
+        routerBase: getAssociatedTokenAddressSync(p.m.baseMint, router, true),
+        issuerBase: getAssociatedTokenAddressSync(p.m.baseMint, p.m.issuer, true),
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .instruction();
+  }
+
+  /** Return tokens that reached a settled or cancelled mandate's vaults. */
+  async sweep(p: { mandate: PublicKey; m: any }) {
+    const settled = !!p.m.status?.settled;
+    return this.program.methods
+      .sweep()
+      .accountsStrict({
+        mandate: p.mandate,
+        baseVault: p.m.baseVault,
+        quoteVault: p.m.quoteVault,
+        feeVault: p.m.feeVault,
+        bondVault: p.m.bondVault,
+        issuerBase: getAssociatedTokenAddressSync(p.m.baseMint, p.m.issuer, true),
+        issuerQuote: getAssociatedTokenAddressSync(p.m.quoteMint, p.m.issuer, true),
+        bondOwnerQuote: getAssociatedTokenAddressSync(p.m.quoteMint, settled ? p.m.maker : p.m.issuer, true),
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .instruction();
+  }
+
   // --- decoding -------------------------------------------------------------
 
   decodeMandate(data: Buffer | Uint8Array): any {
@@ -644,3 +725,5 @@ export * from "./rpc";
 export * from "./sentinel";
 export * from "./systemone";
 export * from "./measure";
+import { measureCommitted, type CommittedResult } from "./measure";
+export * from "./accounts";

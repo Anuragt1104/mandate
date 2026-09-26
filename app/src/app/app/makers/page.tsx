@@ -3,6 +3,7 @@
 import { Activity } from "lucide-react";
 import { usePoll } from "@/lib/hooks";
 import { fetchMakerProfiles } from "@/lib/chain";
+import { loadBoard, type Board } from "@/lib/loaders";
 import { usePersonas } from "@/lib/personas";
 import { rating } from "@/lib/sla";
 import { Grade, Party } from "@/components/sla";
@@ -22,6 +23,7 @@ const LADDER = [
 export default function Makers() {
   const book = usePersonas();
   const { data, error } = usePoll(fetchMakerProfiles, [], 20_000);
+  const { data: board } = usePoll(loadBoard, [], 30_000);
   const rows = (data ?? [])
     .map(({ p }) => {
       const ok = Number(p.periodsOk);
@@ -41,6 +43,9 @@ export default function Makers() {
           <h1 className="h1">Maker ratings</h1>
           <p className="muted" style={{ margin: 0, maxWidth: "66ch" }}>
             The program writes every closed period to the maker&apos;s profile. Nobody self-reports, and the record follows the maker&apos;s wallet across every SLA it takes.
+          </p>
+          <p className="small muted" style={{ margin: "6px 0 0", maxWidth: "66ch" }}>
+            Read it as service history, not an endorsement: a grade counts periods, not how much was at stake or who the counterparties were, so a maker could build one with friendly issuers and easy terms. The counterparties column shows how many different issuers it served.
           </p>
         </div>
       </div>
@@ -67,6 +72,7 @@ export default function Makers() {
                   <th className="r">SLAs taken</th>
                   <th className="r">Completed</th>
                   <th className="r">Breached</th>
+                  <th className="r">Counterparties <InfoTip>Distinct issuers across its agreements. More is harder to fake.</InfoTip></th>
                   <th className="r">Fees earned</th>
                   <th className="r">Bond slashed</th>
                 </tr>
@@ -88,8 +94,9 @@ export default function Makers() {
                     <td className="r num">{p.mandatesAccepted}</td>
                     <td className="r num">{p.mandatesCompleted}</td>
                     <td className="r num" style={{ color: p.mandatesBreached ? "var(--down)" : undefined, fontWeight: p.mandatesBreached ? 650 : undefined }}>{p.mandatesBreached}</td>
-                    <td className="r num">{fmt(Number(p.feesEarned) / 1e6)} USDC</td>
-                    <td className="r num" style={{ color: Number(p.bondSlashed) ? "var(--down)" : undefined }}>{fmt(Number(p.bondSlashed) / 1e6)} USDC</td>
+                    <td className="r num">{board ? counterparties(board, p.maker.toBase58()) : "…"}</td>
+                    <td className="r num">{board ? perQuote(board, p.maker.toBase58(), "feesEarned") : "…"}</td>
+                    <td className="r num" style={{ color: Number(p.bondSlashed) ? "var(--down)" : undefined }}>{board ? perQuote(board, p.maker.toBase58(), "bondSlashed") : "…"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -112,4 +119,26 @@ export default function Makers() {
       </div>
     </>
   );
+}
+
+/** Distinct issuers a maker has served. */
+function counterparties(board: Board, maker: string) {
+  return new Set(board.rows.filter((r) => r.m.maker.toBase58() === maker).map((r) => r.m.issuer.toBase58())).size;
+}
+
+/**
+ * A money field summed over the maker's agreements, per quote token in its own decimals. The
+ * on-chain profile adds raw amounts across quote mints, so it isn't used for money.
+ */
+function perQuote(board: Board, maker: string, field: "feesEarned" | "bondSlashed") {
+  const totals = new Map<string, number>();
+  for (const r of board.rows) {
+    if (r.m.maker.toBase58() !== maker) continue;
+    const mint = r.m.quoteMint.toBase58();
+    const d = board.mints[mint]?.decimals;
+    if (d === undefined) continue;
+    totals.set(mint, (totals.get(mint) ?? 0) + Number(r.m[field]) / 10 ** d);
+  }
+  const parts = [...totals].filter(([, v]) => v > 0).map(([mint, v]) => `${fmt(v)} ${board.labels[mint]?.symbol ?? mint.slice(0, 4)}`);
+  return parts.length ? parts.join(" + ") : "0";
 }

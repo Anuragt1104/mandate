@@ -34,6 +34,15 @@ pub struct MandateTerms {
     pub slash_bps: u16,
 }
 
+impl MandateTerms {
+    /// Most the maker can earn: every period compliant.
+    pub fn max_fees(&self) -> Result<u64> {
+        self.fee_per_period
+            .checked_mul(self.duration_periods as u64)
+            .ok_or_else(|| error!(crate::errors::MandateError::MathOverflow))
+    }
+}
+
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq, InitSpace)]
 #[repr(u8)]
 pub enum MandateStatus {
@@ -124,6 +133,7 @@ pub struct Mandate {
     pub anchor: Anchor,
 
     pub created_at: i64,
+    /// Scoring start: acceptance plus the setup window (`SETUP_GRACE_SECS`).
     pub start_ts: i64,
     pub end_ts: i64,
 

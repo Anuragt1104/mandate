@@ -1,13 +1,18 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Connection } from "@solana/web3.js";
 import { AnchorProvider, Idl, Program } from "@coral-xyz/anchor";
 import { useAnchorWallet, useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { ComputeBudgetProgram, PublicKey, Transaction, TransactionInstruction, Signer } from "@solana/web3.js";
 import idl from "../../../sdk/idl/mandate.json";
 import { MandateClient } from "../../../sdk/src";
 import { useToast } from "@/components/Providers";
-import { explorerUrl } from "./chain";
+import { RPC_URL, explorerUrl, freshFetch } from "./chain";
+
+/** Reads for signing never come from a dashboard cache (see freshFetch). */
+let _fresh: Connection | null = null;
+const freshConnection = () => (_fresh ??= new Connection(RPC_URL, { commitment: "confirmed", fetch: freshFetch as any, disableRetryOnRateLimit: true }));
 
 const ERRORS: Record<number, string> = Object.fromEntries(((idl as any).errors ?? []).map((e: any) => [e.code, e.msg]));
 
@@ -38,26 +43,51 @@ export function useMandateActions() {
     [anchorWallet, connection],
   );
 
+  /**
+   * Build, simulate (the wallet's preflight), send and confirm one transaction. With
+   * `mandate`, the agreement is re-read first, bypassing any cache, and the fresh state is
+   * passed to `build`, so the transaction matches the account as it is now. Confirmation is
+   * bounded by the blockhash's validity; if that passes without a confirmation, the
+   * signature's history is checked, and an unknown outcome is reported as unknown (with the
+   * link), never as a failure the user might retry into a duplicate.
+   */
   async function run(
     label: string,
-    build: (c: MandateClient, me: PublicKey) => Promise<TransactionInstruction[]>,
-    opts: { signers?: Signer[]; done?: string } = {},
+    build: (c: MandateClient, me: PublicKey, fresh: any | null) => Promise<TransactionInstruction[]>,
+    opts: { signers?: Signer[]; done?: string; mandate?: PublicKey } = {},
   ): Promise<boolean> {
     if (!client || !publicKey) {
       toast({ kind: "error", text: "Connect a wallet first." });
       return false;
     }
     setBusy(label);
+    const conn = freshConnection();
+    let sig: string | null = null;
     try {
-      const ixs = await build(client, publicKey);
-      const tx = new Transaction().add(ComputeBudgetProgram.setComputeUnitLimit({ units: 1_000_000 }), ...ixs);
-      const sig = await sendTransaction(tx, connection, { signers: opts.signers, preflightCommitment: "confirmed" });
-      const res = await connection.confirmTransaction(sig, "confirmed");
-      if (res.value.err) throw new Error(JSON.stringify(res.value.err));
+      let fresh: any = null;
+      if (opts.mandate) {
+        const info = await conn.getAccountInfo(opts.mandate, "confirmed");
+        if (!info) throw new Error("The agreement could not be read right now. Try again in a moment.");
+        fresh = client.decodeMandate(info.data);
+      }
+      const ixs = await build(client, publicKey, fresh);
+      const { blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash("confirmed");
+      const tx = new Transaction({ feePayer: publicKey, blockhash, lastValidBlockHeight }).add(ComputeBudgetProgram.setComputeUnitLimit({ units: 1_000_000 }), ...ixs);
+      sig = await sendTransaction(tx, connection, { signers: opts.signers, preflightCommitment: "confirmed" });
+      const res = await conn.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed").catch(() => null);
+      if (res?.value.err) throw new Error(JSON.stringify(res.value.err));
+      if (!res) {
+        const st = (await conn.getSignatureStatuses([sig], { searchTransactionHistory: true })).value[0];
+        if (st?.err) throw new Error(JSON.stringify(st.err));
+        if (!st?.confirmationStatus) {
+          toast({ kind: "error", text: `${label}: the network didn't confirm in time, and it may still land. Check the transaction before trying again.`, href: explorerUrl(sig) });
+          return false;
+        }
+      }
       toast({ kind: "info", text: opts.done ?? `${label}: done.`, href: explorerUrl(sig) });
       return true;
     } catch (e: any) {
-      toast({ kind: "error", text: `${label} failed. ${describeError(e)}` });
+      toast({ kind: "error", text: `${label} failed. ${describeError(e)}`, href: sig ? explorerUrl(sig) : undefined });
       return false;
     } finally {
       setBusy(null);

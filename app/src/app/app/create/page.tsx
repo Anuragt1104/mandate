@@ -7,7 +7,7 @@ import { PublicKey } from "@solana/web3.js";
 import { createAssociatedTokenAccountIdempotentInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { CircleAlert } from "lucide-react";
 import { useMandateActions } from "@/lib/actions";
-import { CLUSTER, fetchSimBook, fetchTokenLabels, mintDecimals, type TokenLabel } from "@/lib/chain";
+import { CLUSTER, fetchMints, fetchSimBook, fetchTokenLabels, mintDecimals, type MintInfo, type TokenLabel } from "@/lib/chain";
 import { pda } from "../../../../../sdk/src";
 import { WalletButton } from "@/components/wallet";
 import { InfoTip, fmtFull } from "@/components/ui";
@@ -93,6 +93,13 @@ export default function CreateMandate() {
   const baseSym = labels[form.baseMint]?.symbol ?? "base";
   const quoteSym = labels[form.quoteMint]?.symbol ?? "quote";
   const n = (k: string) => Number(form[k]);
+  // Mint decimals, so no amount carries more precision than the chain can hold: what is signed is what the preview shows.
+  const [mints, setMints] = useState<Record<string, MintInfo>>({});
+  useEffect(() => {
+    const keys = [form.baseMint, form.quoteMint].filter(isKey).map((k) => new PublicKey(k));
+    if (keys.length) fetchMints(keys).then(setMints).catch(() => undefined);
+  }, [form.baseMint, form.quoteMint]);
+  const places = (v: string) => (v.includes(".") ? v.split(".")[1].length : 0);
 
   const errors = useMemo(() => {
     const e: Record<string, string> = {};
@@ -106,8 +113,14 @@ export default function CreateMandate() {
     if (!(n("speedPctPerMin") > 0)) e.speedPctPerMin = "Must be above 0.";
     if (n("liquidityLockSecs") > n("periodMinutes") * 60) e.liquidityLockSecs = "Must not exceed the period length.";
     if (!(n("slashPct") >= 0 && n("slashPct") <= 100)) e.slashPct = "Between 0 and 100.";
+    const qd = mints[form.quoteMint]?.decimals;
+    const bd = mints[form.baseMint]?.decimals;
+    for (const k of ["feePerPeriod", "bond", "minDepth", "quoteDeposit", "feeBudget"]) if (qd !== undefined && !e[k] && places(form[k]) > qd) e[k] = `At most ${qd} decimal places for this token.`;
+    if (bd !== undefined && !e.baseDeposit && places(form.baseDeposit) > bd) e.baseDeposit = `At most ${bd} decimal places for this token.`;
+    const maxPay = n("feePerPeriod") * n("durationPeriods");
+    if (!e.feeBudget && n("feeBudget") < maxPay - 1e-9) e.feeBudget = `Must cover every period (${fmtFull(maxPay)}): a maker can only accept a fully funded agreement.`;
     return e;
-  }, [form, mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [form, mode, mints]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const valid = Object.keys(errors).length === 0;
   const maxPayout = n("feePerPeriod") * n("durationPeriods");
@@ -275,7 +288,7 @@ export default function CreateMandate() {
               <dt>Fee budget covers</dt><dd style={{ color: underfunded ? "var(--warn)" : undefined }}>{isFinite(budgetPeriods) ? `${Math.min(budgetPeriods, n("durationPeriods")).toLocaleString("en-US")} of ${n("durationPeriods").toLocaleString("en-US")} periods` : "all periods"}</dd>
               <dt>Escrowed inventory</dt><dd>{fmtFull(n("baseDeposit"))} {baseSym} · {fmtFull(n("quoteDeposit"))} {quoteSym}</dd>
             </dl>
-            {underfunded && <div className="notice warn"><CircleAlert />The fee budget runs out after {budgetPeriods.toLocaleString("en-US")} periods. Makers may pass on it, or you can top it up later.</div>}
+            {underfunded && <div className="notice warn"><CircleAlert />The fee budget runs out after {budgetPeriods.toLocaleString("en-US")} periods. The program only lets a maker accept once it covers the whole term.</div>}
             {me ? (
               <button className="btn btn-primary btn-lg btn-block" type="submit" disabled={!!busy || !valid}>{busy ? "Posting…" : "Fund and post the SLA"}</button>
             ) : <WalletButton />}

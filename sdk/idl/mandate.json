@@ -59,6 +59,12 @@
           "writable": true
         },
         {
+          "name": "fee_vault",
+          "docs": [
+            "Must already hold every fee the maker could earn over the term."
+          ]
+        },
+        {
           "name": "maker_quote",
           "writable": true
         },
@@ -768,6 +774,77 @@
       ]
     },
     {
+      "name": "recover_leftover",
+      "docs": [
+        "Permissionless: once the mandate has ended, send leftover supply to its issuer."
+      ],
+      "discriminator": [
+        184,
+        13,
+        254,
+        74,
+        30,
+        243,
+        204,
+        230
+      ],
+      "accounts": [
+        {
+          "name": "router",
+          "relations": [
+            "launch"
+          ]
+        },
+        {
+          "name": "launch",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  97,
+                  117,
+                  110,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "router"
+              },
+              {
+                "kind": "account",
+                "path": "mandate.base_mint",
+                "account": "Mandate"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mandate",
+          "relations": [
+            "launch"
+          ]
+        },
+        {
+          "name": "router_base",
+          "writable": true
+        },
+        {
+          "name": "issuer_base",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "register_launch",
       "docs": [
         "Launchpad maps a launched mint to its mandate."
@@ -1120,6 +1197,64 @@
         }
       ],
       "args": []
+    },
+    {
+      "name": "sweep",
+      "docs": [
+        "Permissionless: return tokens that reached a settled or cancelled mandate's vaults."
+      ],
+      "discriminator": [
+        40,
+        23,
+        234,
+        175,
+        14,
+        61,
+        154,
+        177
+      ],
+      "accounts": [
+        {
+          "name": "mandate"
+        },
+        {
+          "name": "base_vault",
+          "writable": true
+        },
+        {
+          "name": "quote_vault",
+          "writable": true
+        },
+        {
+          "name": "fee_vault",
+          "writable": true
+        },
+        {
+          "name": "bond_vault",
+          "writable": true
+        },
+        {
+          "name": "issuer_base",
+          "writable": true
+        },
+        {
+          "name": "issuer_quote",
+          "writable": true
+        },
+        {
+          "name": "bond_owner_quote",
+          "docs": [
+            "Only the maker ever funds the bond vault, so anything there after settlement is",
+            "the maker's. A cancelled mandate never had a bond: it goes to the issuer."
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
     }
   ],
   "accounts": [
@@ -1190,6 +1325,19 @@
     }
   ],
   "events": [
+    {
+      "name": "LeftoverRecovered",
+      "discriminator": [
+        39,
+        198,
+        87,
+        154,
+        214,
+        172,
+        204,
+        39
+      ]
+    },
     {
       "name": "LeftoverRouted",
       "discriminator": [
@@ -1332,6 +1480,19 @@
         237,
         207
       ]
+    },
+    {
+      "name": "VaultsSwept",
+      "discriminator": [
+        21,
+        13,
+        146,
+        77,
+        51,
+        102,
+        167,
+        153
+      ]
     }
   ],
   "errors": [
@@ -1454,6 +1615,11 @@
       "code": 6023,
       "name": "LiquidityCooldown",
       "msg": "Liquidity was added too recently to be removed"
+    },
+    {
+      "code": 6024,
+      "name": "UnderfundedFees",
+      "msg": "The fee vault must hold every fee the maker could earn before a maker can accept"
     }
   ],
   "types": [
@@ -1616,6 +1782,30 @@
           {
             "name": "bump",
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LeftoverRecovered",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "base_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "to",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
           }
         ]
       }
@@ -1915,6 +2105,9 @@
           },
           {
             "name": "start_ts",
+            "docs": [
+              "Scoring start: acceptance plus the setup window (`SETUP_GRACE_SECS`)."
+            ],
             "type": "i64"
           },
           {
@@ -2469,6 +2662,30 @@
           {
             "name": "cranker",
             "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VaultsSwept",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "to_issuer_base",
+            "type": "u64"
+          },
+          {
+            "name": "to_issuer_quote",
+            "type": "u64"
+          },
+          {
+            "name": "to_bond_owner",
+            "type": "u64"
           }
         ]
       }

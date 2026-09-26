@@ -10,6 +10,30 @@
  * timed out is tried after the others for that method for 90 seconds, so traffic returns to
  * the primary once it recovers. Healthy calls never touch the fallbacks.
  */
+/**
+ * Endpoints are named by a safe label everywhere a message can escape (errors, logs, HTTP
+ * responses): keyed providers put credentials in the query string or userinfo, so only the
+ * host is shown.
+ */
+export function endpointLabel(url: string, index?: number): string {
+  try {
+    const u = new URL(url);
+    return `${index === undefined ? "" : `rpc#${index + 1} `}${u.host}`;
+  } catch {
+    return index === undefined ? "rpc" : `rpc#${index + 1}`;
+  }
+}
+
+/**
+ * Reduce every URL in `text` to its scheme and host (providers put keys in the query, the
+ * path or userinfo), and mask key-like parameters that appear on their own.
+ */
+export function redact(text: string): string {
+  return String(text)
+    .replace(/(https?|wss?):\/\/([^\s/@"']+@)?([^\s/?#"']+)([^\s?#"']*)(\?[^\s#"']*)?(#[^\s"']*)?/gi, (_m, proto, _auth, host) => `${proto}://${host}`)
+    .replace(/((?:api[-_]?key|token|secret|auth|key)=)[^&\s"']+/gi, "$1[redacted]");
+}
+
 const RATE_LIMITED = /"error"\s*:\s*\{\s*"code"\s*:\s*(-32029|429|-32005)\b|too many requests|rate limit/i;
 const REPROBE_MS = 90_000;
 
@@ -22,8 +46,9 @@ export function failoverFetch(endpoints: string[], opts: { timeoutMs?: number; h
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
   async function accept(res: Response, url: string): Promise<Response> {
-    if (res.status === 429 || res.status >= 500) throw new Error(`${url} answered HTTP ${res.status}`);
-    if (RATE_LIMITED.test((await res.clone().text()).slice(0, 300))) throw new Error(`${url} is rate limiting`);
+    const label = endpointLabel(url, urls.indexOf(url));
+    if (res.status === 429 || res.status >= 500) throw new Error(`${label} answered HTTP ${res.status}`);
+    if (RATE_LIMITED.test((await res.clone().text()).slice(0, 300))) throw new Error(`${label} is rate limiting`);
     return res;
   }
 
@@ -64,7 +89,10 @@ export function failoverFetch(endpoints: string[], opts: { timeoutMs?: number; h
             aborts.delete(idx);
             running--;
             if (settled) return;
-            lastErr = e;
+            // Transport errors can quote the request URL; never let it through.
+            const label = endpointLabel(urls[idx], idx);
+            const why = redact(e?.name === "AbortError" ? "timed out" : e?.message ?? String(e));
+            lastErr = new Error(why.startsWith(label) ? why : `${label}: ${why}`);
             slowAt.set(`${method}|${idx}`, Date.now());
             if (next < order.length) launch();
             else if (running === 0) {

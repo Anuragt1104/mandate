@@ -1,15 +1,171 @@
 /**
  * Two different questions about a maker's book, kept apart on purpose:
  *
- *  - committed(): what the Mandate program enforces (a mirror of programs/mandate/src/
- *    scoring.rs). Each bin is valued at its own price, so trading against the book does not
- *    change the result: nobody can fail a compliant maker by buying out its asks.
- *  - executable(): what a trader would actually get right now, walking the book's current
- *    token composition. This moves with every trade, which is exactly why it isn't enforced.
+ *  - measureCommitted(): what the Mandate program enforces. An exact mirror of
+ *    programs/mandate/src/scoring.rs on raw account data: Q64.64 bin prices computed the
+ *    way math.rs computes them, each bin valued before the ownership share is applied, the
+ *    same rounding, saturation and window. Its result is the program's result (tested
+ *    against the program on real DLMM accounts in tests/lifecycle.test.ts). Trading against
+ *    the book does not change it: nobody can fail a compliant maker by buying out its asks.
+ *    When an input is missing it says "unknown" rather than guessing a result.
+ *  - executable(): an estimate of what a trader would get right now, walking the book's
+ *    current token composition in floating point. It moves with every trade, which is
+ *    exactly why it isn't enforced; use it for display only.
  *
  * An SLA can pass while execution is poor (a side was just drained and not yet refilled);
  * showing both keeps the agreement honest about what it guarantees.
  */
+
+// ---------------------------------------------------------------- canonical (enforced)
+
+const U64_MAX = (1n << 64n) - 1n;
+const U128_MAX = (1n << 128n) - 1n;
+const U256_MAX = (1n << 256n) - 1n;
+const ONE = 1n << 64n;
+const BPS = 10_000n;
+const MAX_EXPONENTIAL = 0x80000;
+const BINS_PER_ARRAY = 70;
+const SPREAD_SIZE_DIVISOR = 10n;
+export const EMPTY_SIDE = 65535;
+
+class MathOverflow extends Error {}
+const mulU128 = (a: bigint, b: bigint) => {
+  const r = a * b;
+  if (r > U128_MAX) throw new MathOverflow();
+  return r;
+};
+
+/** math.rs pow_q64: base^exp in Q64.64, inverting when base >= 1 so intermediates stay below 2^128. */
+export function powQ64(base: bigint, exp: number): bigint | null {
+  if (exp === 0) return ONE;
+  let invert = exp < 0;
+  const e = Math.abs(exp);
+  if (e >= MAX_EXPONENTIAL) return null;
+  let squared = base;
+  try {
+    if (squared >= ONE) {
+      if (squared === 0n) return null;
+      squared = U128_MAX / squared;
+      invert = !invert;
+    }
+    let result = ONE;
+    for (let bit = 0; 1 << bit <= e; bit++) {
+      if (e & (1 << bit)) result = mulU128(result, squared) >> 64n;
+      squared = mulU128(squared, squared) >> 64n;
+    }
+    if (result === 0n) return null;
+    if (invert) result = U128_MAX / result;
+    return result;
+  } catch (e) {
+    if (e instanceof MathOverflow) return null;
+    throw e;
+  }
+}
+
+/** math.rs price_from_bin_id: (1 + bin_step / 10_000)^bin_id in Q64.64. */
+export function priceQ64(binId: number, binStep: number): bigint | null {
+  const bps = (BigInt(binStep) << 64n) / BPS;
+  return powQ64(ONE + bps, binId);
+}
+
+/** math.rs base_to_quote: (amount × price) >> 64, saturating at u64::MAX. */
+function baseToQuote(amount: bigint, priceQ64: bigint): bigint {
+  const v = (amount * priceQ64) >> 64n;
+  return v > U64_MAX ? U64_MAX : v;
+}
+
+/** math.rs mul_div: a × b / d rounded down, None above u128. */
+function mulDiv(a: bigint, b: bigint, d: bigint): bigint | null {
+  if (d === 0n) return null;
+  const n = a * b;
+  if (n > U256_MAX) return null;
+  const r = n / d;
+  return r > U128_MAX ? null : r;
+}
+
+/** math.rs bin_array_index: floor(bin / 70). */
+export function binArrayIndexOf(bin: number): number {
+  return Math.floor(bin / BINS_PER_ARRAY);
+}
+
+export interface RawBin {
+  amountX: bigint;
+  amountY: bigint;
+  liquiditySupply: bigint;
+}
+
+export interface RawTerms {
+  minDepthQuote: bigint;
+  depthWindowBps: number;
+  maxSpreadBps: number;
+}
+
+export interface MeasureInput {
+  anchorBin: number;
+  binStep: number;
+  /** The mandate position's range and per-bin liquidity shares; null when none is open. */
+  position: { lower: number; upper: number; shares: bigint[] } | null;
+  /** The 70 bins of bin array `index`, or undefined when it wasn't supplied. */
+  binArray: (index: number) => RawBin[] | undefined;
+  terms: RawTerms;
+}
+
+export type CommittedResult =
+  | { status: "measured"; ok: boolean; bidDepth: bigint; askDepth: bigint; spreadBps: number }
+  /** An input the program would need is missing (it would reject the snapshot): no verdict. */
+  | { status: "unknown"; reason: string };
+
+/** scoring.rs measure(), exactly: raw quote atoms in, the program's verdict out. */
+export function measureCommitted(input: MeasureInput): CommittedResult {
+  const step = Math.max(1, input.binStep);
+  const windowBins = Math.floor(input.terms.depthWindowBps / step);
+  let size = input.terms.minDepthQuote / SPREAD_SIZE_DIVISOR;
+  if (size < 1n) size = 1n;
+  const anchor = input.anchorBin;
+  let bidDepth = 0n;
+  let askDepth = 0n;
+  let bidAt: number | null = null;
+  let askAt: number | null = null;
+  const pos = input.position;
+
+  if (pos) {
+    const committed = (bin: number): bigint | string => {
+      if (bin < pos.lower || bin > pos.upper) return 0n;
+      const share = pos.shares[bin - pos.lower] ?? 0n;
+      if (share === 0n) return 0n;
+      const idx = binArrayIndexOf(bin);
+      const arr = input.binArray(idx);
+      if (!arr) return `bin array ${idx} was not read`;
+      const b = arr[bin - idx * BINS_PER_ARRAY];
+      if (!b) return "bin outside its array";
+      if (b.liquiditySupply === 0n) return 0n;
+      const p = priceQ64(bin, step);
+      if (p === null) return "price overflow";
+      const value = baseToQuote(b.amountX, p) + b.amountY;
+      const mine = mulDiv(value, share, b.liquiditySupply);
+      if (mine === null) return "value overflow";
+      return mine > U64_MAX ? U64_MAX : mine;
+    };
+    const sat = (a: bigint, b: bigint) => (a + b > U64_MAX ? U64_MAX : a + b);
+    for (let k = 0; k <= windowBins; k++) {
+      const v = committed(anchor - k);
+      if (typeof v === "string") return { status: "unknown", reason: v };
+      bidDepth = sat(bidDepth, v);
+      if (bidAt === null && bidDepth >= size) bidAt = anchor - k;
+    }
+    for (let k = 1; k <= windowBins; k++) {
+      const v = committed(anchor + k);
+      if (typeof v === "string") return { status: "unknown", reason: v };
+      askDepth = sat(askDepth, v);
+      if (askAt === null && askDepth >= size) askAt = anchor + k;
+    }
+  }
+  const spreadBps = bidAt !== null && askAt !== null ? Math.min((askAt - bidAt) * step, EMPTY_SIDE) : EMPTY_SIDE;
+  const ok = !!pos && spreadBps <= input.terms.maxSpreadBps && bidDepth >= input.terms.minDepthQuote && askDepth >= input.terms.minDepthQuote;
+  return { status: "measured", ok, bidDepth, askDepth, spreadBps };
+}
+
+// ---------------------------------------------------------------- estimate (shown only)
 
 export interface Bin {
   binId: number;
@@ -19,44 +175,6 @@ export interface Bin {
   quote: number;
   /** Price of one base token in quote at this bin (UI units). */
   price: number;
-}
-
-export interface CommitTerms {
-  minDepth: number; // quote, UI units
-  windowBps: number;
-  maxSpreadBps: number;
-}
-
-export interface Committed {
-  ok: boolean;
-  bidDepth: number;
-  askDepth: number;
-  /** Spread at size (min depth / 10) in bps; null when a side can't reach that size. */
-  spreadBps: number | null;
-}
-
-/** The program's measurement: committed value around the reference bin. */
-export function committed(bins: Bin[], referenceBin: number, binStep: number, t: CommitTerms): Committed {
-  const byId = new Map(bins.map((b) => [b.binId, b]));
-  const value = (id: number) => {
-    const b = byId.get(id);
-    return b ? b.base * b.price + b.quote : 0;
-  };
-  const windowBins = Math.ceil(t.windowBps / Math.max(1, binStep));
-  const size = t.minDepth / 10;
-  let bidDepth = 0;
-  let askDepth = 0;
-  let bidAt: number | null = null;
-  let askAt: number | null = null;
-  for (let k = 0; k <= windowBins; k++) {
-    bidDepth += value(referenceBin - k);
-    if (bidAt === null && bidDepth >= size) bidAt = referenceBin - k;
-    askDepth += value(referenceBin + 1 + k);
-    if (askAt === null && askDepth >= size) askAt = referenceBin + 1 + k;
-  }
-  const spreadBps = bidAt !== null && askAt !== null ? (askAt - bidAt) * binStep : null;
-  const ok = bins.length > 0 && spreadBps !== null && spreadBps <= t.maxSpreadBps && bidDepth >= t.minDepth && askDepth >= t.minDepth;
-  return { ok, bidDepth, askDepth, spreadBps };
 }
 
 export interface Fill {
@@ -71,6 +189,7 @@ export interface Fill {
 /**
  * Walk the current book for a buy (spend `size` quote on asks from the active bin up) and a
  * sell (sell base worth `size` quote into bids from the active bin down), before swap fees.
+ * A floating-point estimate for display, never a compliance result.
  */
 export function executable(bins: Bin[], activeBin: number, referencePrice: number, size: number): { buy: Fill; sell: Fill } {
   const asks = bins.filter((b) => b.base > 0 && b.binId >= activeBin).sort((a, b) => a.binId - b.binId);

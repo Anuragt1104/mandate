@@ -1,0 +1,11 @@
+{
+  "reviewedCommit": "e607bc4",
+  "sampleTimestampBeforeRemoval": 1758000400,
+  "taintTimestamp": 1758000400,
+  "now": 1758001000,
+  "misattributedBin": 200,
+  "referenceBefore": 0,
+  "referenceAfter": 4,
+  "targetAfter": 200,
+  "limitation": "Demonstrates taint bypass and reference movement; not a completed vault-drain exploit."
+}

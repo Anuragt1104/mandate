@@ -4,7 +4,8 @@ import { useRef, useState, type ReactNode } from "react";
 import { PublicKey } from "@solana/web3.js";
 import { CircleCheck, CircleDashed, OctagonX, TriangleAlert, Flag, Radar } from "lucide-react";
 import type { Incident, Obligation, Rating, SlaStatus, Tick, Tone } from "@/lib/sla";
-import { DIAGNOSIS_LABELS, type Diagnosis, type SentinelAssessment } from "../../../sdk/src/sentinel";
+import { DIAGNOSIS_LABELS, type Diagnosis } from "../../../sdk/src/sentinel";
+import type { ShownRead } from "@/lib/trust";
 import { executable, type Fill } from "../../../sdk/src/measure";
 import { personaOf, type PersonaBook } from "@/lib/personas";
 import { Address, InfoTip, Tip, ago, duration, fmtFull, shortAddr } from "./ui";
@@ -155,15 +156,15 @@ export function IncidentList({ items, periodSecs, makerName, slashed, quote, cau
 // ---------------------------------------------------------------- contract
 
 /** The terms, set as the schedules of an agreement. */
-export function Schedule({ t, quote, decimals = 6, compact = false }: { t: any; quote: string; decimals?: number; compact?: boolean }) {
+export function Schedule({ t, quote, decimals, compact = false }: { t: any; quote: string; decimals: number; compact?: boolean }) {
   const q = (v: any) => Number(v?.toString?.() ?? v) / 10 ** decimals;
   const minutes = (s: number) => duration(s);
   const clauses: { title: string; items: [string, ReactNode, string?][] }[] = [
     {
       title: "Schedule A · Service levels",
       items: [
-        ["A.1", <><b>{fmtFull(q(t.minDepthQuote))} {quote}</b> of bids within {t.depthWindowBps / 100}% below the reference price</>],
-        ["A.2", <><b>{fmtFull(q(t.minDepthQuote))} {quote}</b> of asks within {t.depthWindowBps / 100}% above it</>],
+        ["A.1", <><b>{fmtFull(q(t.minDepthQuote))} {quote}</b> of bids in the price bins within {t.depthWindowBps / 100}% below the reference price</>],
+        ["A.2", <><b>{fmtFull(q(t.minDepthQuote))} {quote}</b> of asks in the bins within {t.depthWindowBps / 100}% above it</>],
         ["A.3", <>Spread no wider than <b>{t.maxSpreadBps} bps</b>, quoted at a size of {fmtFull(q(t.minDepthQuote) / 10)} {quote}</>],
         ["A.4", <>Quotes stay within <b>±{t.bandBps / 100}%</b>: bids at or below the reference, asks at or above it</>, compact ? undefined : `The reference follows the pair's ${minutes(t.anchorTwapSecs)} TWAP at up to ${t.anchorSpeedBpsPerMin / 100}% a minute.`],
       ],
@@ -252,7 +253,7 @@ export const DIAGNOSIS_TONE: Record<Diagnosis, Tone> = {
   quoting_normally: "up",
   thin_but_compliant: "warn",
   withdrew_liquidity: "down",
-  side_depleted_by_trading: "warn",
+  reference_moved: "warn",
   out_of_range: "down",
   not_started: "open",
   unclear: "ended",
@@ -278,36 +279,49 @@ function Gauge({ label, value, info }: { label: string; value: number; info: str
 }
 
 /** The watchtower's latest advisory read of an SLA, from the memo on its check. */
-export function SentinelCard({ read, at, now }: { read: SentinelAssessment | null; at: number | null; now: number }) {
+export function SentinelCard({ shown, now }: { shown: ShownRead | null; now: number }) {
+  const r = shown?.v.read;
+  const trusted = shown?.standing === "trusted";
+  const clock = (ts: number) => new Date(ts * 1000).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   return (
     <div className="card">
       <div className="card-head">
         <span className="h3 row" style={{ gap: 8 }}><Radar style={{ width: 16, height: 16, color: "var(--muted)" }} />Watchtower outlook</span>
-        {read && <span className="xs muted">{judgeName(read.source)}{at ? ` · ${ago(Math.max(0, now - at))}` : ""}</span>}
+        {r && <span className="xs muted">{trusted ? `${shown!.publisherName} · ${judgeName(r.source)}` : "Unverified publisher"}</span>}
       </div>
       <div className="card-body" style={{ display: "grid", gap: 14 }}>
-        {!read ? (
-          <span className="small muted">No watchtower has published a read of this SLA yet. Reads arrive as memos on its checks.</span>
+        {!r ? (
+          <span className="small muted">No current read of this SLA. Watchtowers publish reads as signed memos on their checks; a read expires once it is out of date.</span>
         ) : (
           <>
             <div className="row-between wrap" style={{ gap: 8 }}>
-              <StatusChip tone={DIAGNOSIS_TONE[read.diagnosis]} word={DIAGNOSIS_LABELS[read.diagnosis]} />
-              {isFinite(read.confidence) && <span className="xs muted">confidence {Math.round(read.confidence * 100)}%</span>}
+              <StatusChip tone={DIAGNOSIS_TONE[r.diagnosis]} word={DIAGNOSIS_LABELS[r.diagnosis]} />
+              {isFinite(r.confidence) && <span className="xs muted">confidence {Math.round(r.confidence * 100)}%</span>}
             </div>
-            <div className="checks">
-              {isFinite(read.breach) && read.source !== "rules" && (
-                <Gauge label="Breach outlook" value={read.breach} info="How likely the maker is to let the agreement breach by missing periods in a row, judged by a System One decision model from the maker's record, recent activity and the checks." />
-              )}
-              {isFinite(read.exit) && read.source !== "rules" && (
-                <Gauge label="Maker leaving on purpose" value={read.exit} info="Whether the maker's recent activity looks like a deliberate exit rather than trading or a price move." />
-              )}
-              <Gauge label="Next check failing" value={read.risk} info="Estimated by the watchtower's rules. It sets how often this SLA is checked: still at random, but more often when failure is likely." />
-            </div>
+            {!trusted && (
+              <div className="notice warn xs">
+                Published by <Address value={shown!.v.publisher} />, which this site doesn&apos;t list as a watchtower. Anyone can attach a read to a check, so treat this as third-party commentary; its claimed source is not shown.
+              </div>
+            )}
+            {trusted && (
+              <div className="checks">
+                {isFinite(r.breach) && r.source !== "rules" && (
+                  <Gauge label="Breach outlook" value={r.breach} info="How likely the agreement is to reach its limit of failed periods in a row, judged by a System One decision model from the checks, the maker's verified actions and its service history." />
+                )}
+                {isFinite(r.noRedeploy) && r.source !== "rules" && (
+                  <Gauge label="No liquidity placed within two periods" value={r.noRedeploy} info="Asked only while the obligations are unmet: how likely it is that the maker places no liquidity that restores them over the next two scoring periods. Not asked when the maker's event history is incomplete." />
+                )}
+                <Gauge label="Next check failing" value={r.risk} info="Estimated by the watchtower's rules. It sets how often this SLA is checked: still at random, but more often when failure is likely." />
+              </div>
+            )}
+            <span className="xs muted">
+              Read of the check at {clock(r.observedTs)}, assessed {ago(Math.max(0, now - r.assessedAt))}; current until {clock(r.expiresAt)}.
+            </span>
           </>
         )}
       </div>
       <div className="card-foot">
-        <span className="xs muted">Advisory. The program pays and slashes from its own measurements; this read only steers where watchtowers look and explains what they see.</span>
+        <span className="xs muted">Advisory. The program pays and slashes from its own measurements; a read steers where watchtowers look and explains what they see. A listed publisher&apos;s signature proves who published it, not that a model produced it.</span>
       </div>
     </div>
   );
@@ -383,6 +397,8 @@ export interface AgreementFacts {
   maker: string | null; // the maker's name/address, or null when anyone may accept
   designated?: boolean;
   endsAt?: number | null; // unix seconds, when known
+  /** Plain sentences about mint powers that could hurt the inventory (freeze, unlimited minting). */
+  tokenRisks?: string[];
 }
 
 /** Every term, as a sentence both parties can check before signing. */
@@ -396,16 +412,18 @@ export function AgreementSummary({ f, audience = "both" }: { f: AgreementFacts; 
   const items: [string, ReactNode][] = [
     ["The team puts in", <>
       {f.baseDeposit !== null || f.quoteDeposit !== null ? <><b>{n(f.baseDeposit ?? 0, 0)} {f.base}</b> and <b>{n(f.quoteDeposit ?? 0)} {f.quote}</b> of inventory</> : "Inventory"} in a vault the maker can only quote from, and {f.feeBudget !== null ? <><b>{n(f.feeBudget)} {f.quote}</b></> : "a fee budget"} to pay for compliant periods.
-      {budgetShort && <> <span style={{ color: "var(--warn)" }}>That budget covers {Math.floor((f.feeBudget ?? 0) / Math.max(f.feePerPeriod, 1e-9)).toLocaleString("en-US")} of {f.periods.toLocaleString("en-US")} periods.</span></>}
+      {" "}Every fee the maker could earn must be in the vault before a maker can accept.
+      {budgetShort && <> <span style={{ color: "var(--warn)" }}>This budget covers {Math.floor((f.feeBudget ?? 0) / Math.max(f.feePerPeriod, 1e-9)).toLocaleString("en-US")} of {f.periods.toLocaleString("en-US")} periods, so no maker can accept it until it is topped up to {n(maxPay)} {f.quote}.</span></>}
       {" "}Inventory needs both sides: {f.base} for asks and {f.quote} for bids. Leftover launch supply only covers the first.
     </>],
     ["The maker commits", <>
-      {f.maker ? <>{f.maker}{f.designated ? " (designated)" : ""}</> : "Any maker who accepts"} posts a <b>{n(f.bond)} {f.quote}</b> bond and keeps at least <b>{n(f.minDepth)} {f.quote}</b> of bids within {f.windowPct}% below the reference price and the same of asks above it, with a spread no wider than {f.maxSpreadBps} bps. Quotes must stay within ±{f.bandPct}%, and each deposit is locked for {f.lockSecs} s.
+      {f.maker ? <>{f.maker}{f.designated ? " (designated)" : ""}</> : "Any maker who accepts"} posts a <b>{n(f.bond)} {f.quote}</b> bond and keeps at least <b>{n(f.minDepth)} {f.quote}</b> of bids in the price bins within {f.windowPct}% below the reference price and the same of asks in the bins within {f.windowPct}% above it, with a spread no wider than {f.maxSpreadBps} bps. Quotes must stay within ±{f.bandPct}%, and each deposit is locked for {f.lockSecs} s.
     </>],
-    ["What earns pay", <>Each {duration(f.periodSecs)} period in which every check passes pays <b>{n(f.feePerPeriod)} {f.quote}</b>, up to <b>{n(maxPay)} {f.quote}</b> over {term}.</>],
-    ["What counts as a miss", <>A check finds bids or asks below the minimum, or the spread too wide. A period with any failed check pays nothing. If traders drain a side, the maker must re-quote it before the reference price, which moves at most {f.speedPctPerMin}% a minute, catches up.</>],
-    ["The penalty", <><b>{f.maxFailures}</b> failed periods in a row send <b>{f.slashPct}%</b> of the bond to the team and end the agreement. There is no exception for outages or extreme volatility: price that risk into the fee.</>],
-    ["Who checks", <>Anyone can check, at any time, for a network fee of about 0.000005 SOL. Someone has to: a period nobody checks is neither paid nor failed. The team, the launchpad or a watchtower should run one.</>],
+    ["What earns pay", <>Scoring starts one minute after the maker accepts (time to place quotes). Each {duration(f.periodSecs)} period that is checked at least once, with every check passing, pays <b>{n(f.feePerPeriod)} {f.quote}</b>, up to <b>{n(maxPay)} {f.quote}</b> over {term}.</>],
+    ["What counts as a miss", <>A check finds committed bids or asks below the minimum, or the spread too wide. Trades against the book don&apos;t change that measure; the maker&apos;s own withdrawals and moves of the reference price do. A period with any failed check pays nothing. The reference follows the market at up to {f.speedPctPerMin}% a minute, so a maker who doesn&apos;t re-centre after a move starts failing as it catches up; that speed is a limit, not a guaranteed grace period.</>],
+    ["The penalty", <><b>{f.maxFailures}</b> failed periods with no passing period between them send <b>{f.slashPct}%</b> of the bond to the team and end the agreement. Periods nobody checks don&apos;t reset that count, and don&apos;t add to it. There is no exception for outages or extreme volatility: price that risk into the fee.</>],
+    ["Who checks", <>Anyone can check, at any time, for a network fee of about 0.000005 SOL. Someone has to: a period nobody checks is neither paid nor failed. The team, the launchpad or a watchtower should run one, and agree who funds it.</>],
+    ...(f.tokenRisks?.length ? [["Token risks", <>{f.tokenRisks.join(" ")} The bond covers missed service, not these.</>] as [string, ReactNode]] : []),
     ["How it ends", <>After {f.periods.toLocaleString("en-US")} periods{f.endsAt ? <> ({new Date(f.endsAt * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })})</> : null}, or at a breach. Neither side can leave early once a maker accepts; until then the team can cancel. At settlement the inventory and unused fees go back to the team and the maker gets its earned fees and remaining bond.</>],
   ];
   return (
@@ -427,4 +445,12 @@ export function AgreementSummary({ f, audience = "both" }: { f: AgreementFacts; 
       )}
     </div>
   );
+}
+
+/** What the mints allow that could hurt the escrowed inventory, in plain sentences. */
+export function tokenRisks(base: { symbol: string; mintAuthority: string | null; freezeAuthority: string | null }, quote: { symbol: string; freezeAuthority: string | null }): string[] {
+  const out: string[] = [];
+  if (base.mintAuthority) out.push(`${base.symbol} can still be minted by its mint authority, which can dilute the inventory's value.`);
+  if (quote.freezeAuthority) out.push(`${quote.symbol} has a freeze authority, which could freeze the vault's ${quote.symbol} (common for regulated stablecoins such as USDC).`);
+  return out;
 }

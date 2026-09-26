@@ -1,6 +1,7 @@
 import { expect } from "chai";
 import { BN } from "@coral-xyz/anchor";
 import { Keypair, PublicKey } from "@solana/web3.js";
+import { createTransferInstruction } from "@solana/spl-token";
 import { LiteSVM } from "litesvm";
 import {
   ata,
@@ -15,12 +16,13 @@ import {
   Pair,
   send,
   sendExpectFail,
+  ensureAta,
   startSvm,
   tokenBalance,
   warp,
   writeReferencePool,
 } from "./helpers";
-import { MandateClient, MandateTerms, pda, decodeLbPair, statusName } from "../sdk/src";
+import { MandateClient, MandateTerms, pda, decodeLbPair, decodeBinArray, decodePosition, measureAccounts, statusName, type BinInfo } from "../sdk/src";
 
 const U = (n: number) => new BN(Math.round(n * 1e6));
 
@@ -64,11 +66,14 @@ describe("mandate lifecycle", () => {
         terms,
         baseDeposit: U(5_000),
         quoteDeposit: U(5_000),
-        feeBudget: U(6),
+        // The whole term's fees, as acceptance requires.
+        feeBudget: new BN(terms.feePerPeriod.toNumber() * terms.durationPeriods),
       }),
     ]);
     return key;
   }
+
+  const SETUP = 60; // scoring starts this long after acceptance
 
   async function acceptAndQuote(key: PublicKey, lower = -35) {
     send(svm, maker, [await client.accept({ maker: maker.publicKey, mandate: key, m: load(key) })]);
@@ -170,6 +175,9 @@ describe("mandate lifecycle", () => {
   it("a fully compliant term expires normally; bond and fees go to the maker", async () => {
     const key = await newMandate(13);
     await acceptAndQuote(key, -30);
+    const s0 = load(key);
+    expect(s0.startTs.toNumber()).to.be.greaterThan(0);
+    warp(svm, SETUP);
     for (let p = 0; p < 3; p++) {
       warp(svm, 60);
       send(svm, cranker, [await client.snapshot({ cranker: cranker.publicKey, mandate: key, m: load(key) })]);
@@ -200,7 +208,7 @@ describe("mandate lifecycle", () => {
     const terms = { ...TERMS, periodSecs: 60, durationPeriods: 100, maxConsecutiveFailures: 5 };
     const key = await newMandate(14, terms);
     await acceptAndQuote(key, -30);
-    warp(svm, 60 * 80); // 80 periods with no snapshots
+    warp(svm, SETUP + 60 * 80); // 80 periods with no snapshots
     send(svm, cranker, [await client.finalize({ mandate: key, m: load(key) })]);
     let s = load(key);
     expect(s.currentPeriod).to.eq(32); // capped per call
@@ -212,5 +220,128 @@ describe("mandate lifecycle", () => {
     expect(s.periodsOk).to.eq(0);
     expect(s.consecutiveFailed).to.eq(0);
     expect(statusName(s.status)).to.eq("Active");
+  });
+
+  it("a maker cannot accept an agreement whose fee vault doesn't cover the term", async () => {
+    const key = pda.mandate(issuer.publicKey, base, 16);
+    send(svm, issuer, [
+      await client.createMandate({
+        issuer: issuer.publicKey,
+        baseMint: base,
+        quoteMint: quote,
+        lbPair: pair.lbPair,
+        referencePool: refPool,
+        id: 16,
+        terms: TERMS,
+        baseDeposit: U(10),
+        quoteDeposit: U(10),
+        feeBudget: U(5.99),
+      }),
+    ]);
+    const logs = sendExpectFail(svm, maker, [await client.accept({ maker: maker.publicKey, mandate: key, m: load(key) })]);
+    expect(logs.join("\n")).to.contain("UnderfundedFees");
+    // Topping up the budget makes it acceptable.
+    send(svm, issuer, [await client.deposit({ depositor: issuer.publicKey, mandate: key, m: load(key), base: U(0), quote: U(0), fees: U(0.01) })]);
+    send(svm, maker, [await client.accept({ maker: maker.publicKey, mandate: key, m: load(key) })]);
+    expect(statusName(load(key).status)).to.eq("Active");
+  });
+
+  it("a batch of finalizes that breaches on the first call does not roll back the breach", async () => {
+    const terms = { ...TERMS, periodSecs: 60, durationPeriods: 100, maxConsecutiveFailures: 1 };
+    const key = await newMandate(17, terms);
+    send(svm, maker, [await client.accept({ maker: maker.publicKey, mandate: key, m: load(key) })]);
+    warp(svm, SETUP + 5);
+    // No position: the check fails, and the next finalize breaches.
+    send(svm, cranker, [await client.snapshot({ cranker: cranker.publicKey, mandate: key, m: load(key) })]);
+    expect(load(key).last.ok).to.eq(false);
+    warp(svm, 60 * 40);
+    const fin = await client.finalize({ mandate: key, m: load(key) });
+    send(svm, cranker, [fin, fin, fin]);
+    const s = load(key);
+    expect(statusName(s.status)).to.eq("Breached");
+    expect(s.bondSlashed.toNumber()).to.eq(50_000_000);
+    // And again on its own: still a no-op.
+    send(svm, cranker, [await client.finalize({ mandate: key, m: load(key) })]);
+  });
+
+  it("leftover that reaches the router after cancellation goes to the issuer", async () => {
+    const launchpad = fundedKeypair(svm);
+    const key = await newMandate(18);
+    send(svm, launchpad, [await client.initRouter({ authority: launchpad.publicKey })]);
+    send(svm, launchpad, [await client.registerLaunch({ authority: launchpad.publicKey, baseMint: base, mandate: key })]);
+    send(svm, issuer, [await client.cancel({ mandate: key, m: load(key) })]);
+    const router = pda.router(launchpad.publicKey);
+    ensureAta(svm, launchpad, base, router);
+    mintTo(svm, mintAuth, base, router, 1_000_000n);
+    // Routing into a cancelled mandate is refused...
+    const logs = sendExpectFail(svm, cranker, [await client.routeLeftover({ routerAuthority: launchpad.publicKey, mandate: key, m: load(key) })]);
+    expect(logs.join("\n")).to.contain("InvalidStatus");
+    // ...and anyone can recover it to the issuer instead.
+    const before = tokenBalance(svm, ata(base, issuer.publicKey));
+    send(svm, cranker, [await client.recoverLeftover({ routerAuthority: launchpad.publicKey, mandate: key, m: load(key) })]);
+    expect(tokenBalance(svm, ata(base, issuer.publicKey)) - before).to.eq(1_000_000n);
+    expect(tokenBalance(svm, ata(base, router))).to.eq(0n);
+  });
+
+  it("leftover cannot be recovered while the mandate is live", async () => {
+    const launchpad = fundedKeypair(svm);
+    const key = await newMandate(19);
+    send(svm, launchpad, [await client.initRouter({ authority: launchpad.publicKey })]);
+    send(svm, launchpad, [await client.registerLaunch({ authority: launchpad.publicKey, baseMint: base, mandate: key })]);
+    const router = pda.router(launchpad.publicKey);
+    ensureAta(svm, launchpad, base, router);
+    mintTo(svm, mintAuth, base, router, 1_000n);
+    const logs = sendExpectFail(svm, cranker, [await client.recoverLeftover({ routerAuthority: launchpad.publicKey, mandate: key, m: load(key) })]);
+    expect(logs.join("\n")).to.contain("InvalidStatus");
+  });
+
+  it("tokens sent to a settled or cancelled mandate's vaults are swept to fixed recipients", async () => {
+    const key = await newMandate(20);
+    send(svm, issuer, [await client.cancel({ mandate: key, m: load(key) })]);
+    const m = load(key);
+    // Someone transfers quote into the cancelled mandate's quote vault.
+    send(svm, issuer, [createTransferInstruction(ata(quote, issuer.publicKey), m.quoteVault, issuer.publicKey, 7_000_000n)]);
+    const before = tokenBalance(svm, ata(quote, issuer.publicKey));
+    send(svm, cranker, [await client.sweep({ mandate: key, m })]);
+    expect(tokenBalance(svm, ata(quote, issuer.publicKey)) - before).to.eq(7_000_000n);
+    expect(tokenBalance(svm, m.quoteVault)).to.eq(0n);
+    // Nothing left: a second sweep is refused.
+    const logs = sendExpectFail(svm, cranker, [await client.sweep({ mandate: key, m })]);
+    expect(logs.join("\n")).to.contain("InsufficientVault");
+  });
+
+  it("the SDK's committed measurement equals the program's, atom for atom, across book states", async () => {
+    const key = await newMandate(21);
+    await acceptAndQuote(key, -30);
+    warp(svm, SETUP + 5);
+    const trader = fundedKeypair(svm);
+    mintTo(svm, mintAuth, quote, trader.publicKey, 10_000n * 1_000_000n);
+    mintTo(svm, mintAuth, base, trader.publicKey, 10_000n * 1_000_000n);
+    const compare = async (what: string) => {
+      send(svm, cranker, [await client.snapshot({ cranker: cranker.publicKey, mandate: key, m: load(key) })]);
+      const m = load(key);
+      const pos = m.position.equals(PublicKey.default) ? null : decodePosition(svm.getAccount(m.position)!.data);
+      const arrays = new Map<number, BinInfo[]>();
+      for (const i of [-2, -1, 0, 1]) {
+        const acc = svm.getAccount(pda.binArray(pair.lbPair, i));
+        if (acc) arrays.set(i, decodeBinArray(acc.data).bins);
+      }
+      const sdk = measureAccounts(m, 25, pos, arrays, m.last.anchorBin);
+      expect(sdk.status, what).to.eq("measured");
+      if (sdk.status !== "measured") return;
+      expect([sdk.ok, sdk.bidDepth.toString(), sdk.askDepth.toString(), sdk.spreadBps], what).to.deep.eq([
+        !!m.last.ok, m.last.bidDepthQuote.toString(), m.last.askDepthQuote.toString(), m.last.spreadBps,
+      ]);
+    };
+    await compare("freshly quoted");
+    dlmmSwap(svm, trader, pair, 300_000_000n, false, [0, 1]);
+    await compare("after a buy through the asks");
+    dlmmSwap(svm, trader, pair, 150_000_000n, true, [0, -1]);
+    await compare("after a sell into the bids");
+    warp(svm, 31);
+    send(svm, maker, [await client.removeLiquidity({ authority: maker.publicKey, mandate: key, m: load(key), pair: lb(), bps: 3_333 })]);
+    await compare("after a partial withdrawal (fractional amounts)");
+    send(svm, maker, [await client.removeLiquidity({ authority: maker.publicKey, mandate: key, m: load(key), pair: lb() })]);
+    await compare("after withdrawing everything");
   });
 });

@@ -77,9 +77,14 @@ npm test
 `npm run build` runs `anchor build` and copies the IDL to `sdk/idl/`, which the app and bots
 read. `fetch-programs.sh` downloads the mainnet Meteora programs into `fixtures/programs/`. It uses
 `https://api.mainnet-beta.solana.com` unless `MAINNET_RPC` is set. The unit tests cover the
-math, the reference price and the measurement (20 tests). The integration tests run the full
-lifecycle, the reference price, the security regressions and the DBC → DAMM v2 → Mandate
-launch flow against the real Meteora programs (37 tests).
+math, the reference price and the measurement, with fixtures shared with the SDK (26 tests).
+`npm test` runs the full lifecycle, the reference price (including same-second taints), the
+security regressions and the DBC → DAMM v2 → Mandate launch flow against the real Meteora
+programs; checks that the SDK's measurement equals the program's atom for atom; and runs the
+off-chain regression tests for the RPC proxy, model-answer validation, read provenance,
+account chunking, event ingestion and the model worker (80 tests). CI
+(`.github/workflows/ci.yml`) runs all of it, fails on SBF stack or syscall diagnostics, and
+builds the app. `docs/reviews/` holds the external code review and what changed in response.
 
 ## Run it locally
 
@@ -140,19 +145,29 @@ On non-mainnet clusters the app offers a burner wallet and a "Get test SOL" butt
    - bond and slash size, and how many failed periods in a row trigger a slash
    - max spread, min committed liquidity on each side, and the depth window
    - band, reference TWAP window and speed limit, and liquidity lock
-2. **Accept.** A maker (or the designated maker) posts the bond. Scoring starts.
+2. **Accept.** A maker (or the designated maker) posts the bond. The fee vault must already
+   hold every fee the maker could earn over the term, so a maker accepts a funded promise.
+   Scoring starts after a one-minute setup window (`start_ts`), so every period can be paid.
 3. **Quote.** The maker opens a DLMM position owned by the mandate PDA and deploys inventory:
    quote as bids at or below the reference, base as asks at or above it.
 4. **Check.** Anyone calls `snapshot`. It refreshes the reference from the DLMM oracle and
-   values the position's liquidity per bin around it. It then checks the spread at size
-   (10% of the depth target) and the committed liquidity on each side.
+   values the position's liquidity per bin around it: the reference bin and the whole bins
+   within the depth window below it count as bids, the whole bins within the window above it
+   as asks. It then checks the spread at size (10% of the depth target) and the committed
+   liquidity on each side. The graduated pool's price is recorded for comparison only; if it
+   can't be read, the check still runs.
 5. **Score.** At each period boundary: observed with all checks passing pays
    `fee_per_period`; any failed check fails the period; no checks leaves it unobserved (no
-   fee, no failure). `max_consecutive_failures` failed periods in a row slash the bond.
+   fee, no failure). `max_consecutive_failures` failed periods with no passing period between
+   them slash the bond; unobserved periods neither reset nor add to that count.
 6. **Settle.** After expiry or a breach, anyone unwinds the position and settles:
    - to the issuer: inventory and unused fees
    - to the maker: earned fees and the unslashed bond
    - to the issuer: the slashed part of the bond
+
+   Tokens that reach a vault after settlement or cancellation can be swept by anyone to the
+   same fixed recipients (`sweep`), and leftover launch supply that reaches the router after
+   the mandate ended goes to its issuer (`recover_leftover`).
 
 ### The reference price
 
@@ -160,7 +175,9 @@ Spot prices can be pushed and pushed back inside one transaction, so none are us
 enforcement. The reference is a DLMM bin that follows the pair's oracle TWAP. It moves at
 most `anchor_speed_bps_per_min`, and after a quiet spell by at most one minute's worth per
 update. A maker removal that empties the active bin taints older oracle samples, because
-DLMM's `go_to_a_bin` could otherwise skew the oracle. `docs/security.md` explains why each
+DLMM's `go_to_a_bin` could otherwise skew the oracle; a sample stamped in the same second as
+the removal counts as tainted too, and a full clean window must follow. The app shows when the
+reference is warming, tainted or stale. `docs/security.md` explains why each
 rule exists and what risk remains.
 
 ## Devnet
@@ -222,13 +239,15 @@ a block trade on ORBT immediately.
 
 ## The sentinel: System One models in the watchtower
 
-The watchtower pairs rules with Jev, a System One decision model (typed answers with
-calibrated probabilities, no generated text). Rules decide how often each SLA is checked, so
-failing agreements are watched closely on a limited budget. Jev judges the breach outlook, the
-maker's intent and ambiguous situations, and each check publishes that read as a memo the
-status page shows. Enforcement never depends on it. On the same budget, breaches are confirmed
-in about 206 s instead of 275-501 s in simulation. It is an optional supporting capability; the core is custody and settlement. [docs/sentinel.md](docs/sentinel.md) has the design, the
-evaluation against rules and the benchmarks.
+The watchtower is built as an observation service first: every active SLA gets at least one
+check per period, spare checks go where rules expect failures, and every transaction has a
+deadline. Jev, a System One decision model (typed answers with calibrated probabilities, no
+generated text), runs in its own bounded queue on checks that already landed, so it can never
+delay one. Its read (diagnosis, breach outlook, and whether the maker will fail to redeploy)
+rides on the next check as a signed memo bound to the check it assessed; the app names the
+model only for watchtowers it lists. Enforcement never depends on it, and it is optional: the
+core is custody and settlement. [docs/sentinel.md](docs/sentinel.md) has the design, a
+synthetic evaluation against rules with calibration, and the scheduling benchmark.
 
 ## Program
 
@@ -245,13 +264,15 @@ Meteora programs used (mainnet IDs, loaded locally from `fixtures/programs/`):
 | Instruction | Who | What |
 |---|---|---|
 | `create_mandate`, `deposit`, `cancel` | issuer | fund, top up, or cancel before acceptance |
-| `accept_mandate` | maker | post the bond and start the term |
+| `accept_mandate` | maker | post the bond (fees for the whole term must be escrowed) and start the term after the setup window |
 | `open_position`, `add_liquidity`, `remove_liquidity`, `close_position` | maker (anyone after breach or expiry for unwinding) | manage the mandate's DLMM position |
-| `snapshot`, `finalize` | anyone | measure and score |
+| `snapshot`, `finalize` | anyone | measure and score (`finalize` is a no-op once the mandate has ended) |
 | `claim_maker_fees` | maker | withdraw earned fees |
 | `settle` | anyone | distribute funds after breach or expiry |
 | `init_router`, `register_launch` | launchpad | set up DBC leftover routing |
 | `route_leftover` | anyone | move a graduated token's leftover into its mandate vault |
+| `recover_leftover` | anyone | after the mandate has ended, send router-held leftover to its issuer |
+| `sweep` | anyone | return tokens that reached a settled or cancelled mandate's vaults to fixed recipients |
 
 ## License
 

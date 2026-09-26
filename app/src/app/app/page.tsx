@@ -19,7 +19,11 @@ export default function Network() {
   const { data: events, error: feedError } = usePoll(() => loadFeed(), [], 10_000);
   const [checks, setChecks] = useState(true);
   const ctx = useMemo(() => feedContext(board, book), [board, book]);
-  const sum = board ? summarize(board.rows) : null;
+  const sum = board ? summarize(board) : null;
+  // Money is shown per quote token; the largest one leads, others are noted rather than added.
+  const main = sum?.quotes[0];
+  const others = sum ? sum.quotes.length - 1 : 0;
+  const unit = main ? `${main.symbol}${others ? ` · plus ${others} other quote token${others === 1 ? "" : "s"}` : ""}` : "";
   const open = board?.rows.filter((r) => r.status === "Open") ?? [];
   const k = (v: React.ReactNode) => (sum ? v : <Skeleton w={56} h={24} />);
 
@@ -40,9 +44,9 @@ export default function Network() {
         <Kpi label="Live SLAs" value={k(sum?.active)} sub={sum ? `${sum.open} open to makers` : undefined} />
         <Kpi label="Network uptime" value={k(sum?.compliance === null ? "—" : `${((sum?.compliance ?? 0) * 100).toFixed(1)}%`)} sub={sum ? `${(sum.ok + sum.failed).toLocaleString("en-US")} periods scored` : undefined}
           info="Share of checked periods, across every SLA, in which every obligation was met." />
-        <Kpi label="Bonds at stake" value={k(fmt(sum?.bonded ?? 0, 0))} sub="USDC posted by makers" />
-        <Kpi label="Paid to makers" value={k(fmt(sum?.fees ?? 0))} sub="USDC for compliant periods" />
-        <Kpi label="Slashed" value={k(fmt(sum?.slashed ?? 0, 0))} sub={sum && sum.slashed > 0 ? "USDC, after breaches" : "no breaches yet"} />
+        <Kpi label="Bonds at stake" value={k(fmt(main?.bonded ?? 0, 0))} sub={main ? `${unit}, posted by makers` : "nothing posted yet"} />
+        <Kpi label="Earned by makers" value={k(fmt(main?.fees ?? 0))} sub={main ? `${unit}, for compliant periods` : undefined} />
+        <Kpi label="Slashed" value={k(fmt(main?.slashed ?? 0, 0))} sub={main && main.slashed > 0 ? `${unit}, after breaches` : "no breaches yet"} />
       </div>
 
       {error && !board && <div className="notice warn" style={{ marginTop: 16 }}>Could not reach Solana {CLUSTER}: {error}</div>}
@@ -58,8 +62,10 @@ export default function Network() {
               </div>
               {open.map((r) => {
                 const t = r.m.terms;
-                const quote = board.labels[r.m.quoteMint.toBase58()]?.symbol ?? "USDC";
-                const q = (v: any) => Number(v) / 1e6;
+                const quote = board.labels[r.m.quoteMint.toBase58()]?.symbol ?? "quote";
+                const d = board.mints[r.m.quoteMint.toBase58()]?.decimals;
+                if (d === undefined) return null;
+                const q = (v: any) => Number(v) / 10 ** d;
                 return (
                   <Link key={r.pubkey.toBase58()} href={`/app/mandate/${r.pubkey.toBase58()}`} className="offer-row">
                     <TokenPair base={r.m.baseMint} quote={r.m.quoteMint} labels={board.labels} size={26} sub={<>Issued by {book.parties[r.m.issuer.toBase58()]?.name ?? "the issuer"}</>} />

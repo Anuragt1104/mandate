@@ -1,0 +1,73 @@
+# Program, SDK, keeper and app checks. The LiteSVM tests load the mainnet Meteora programs,
+# which are fetched with scripts/fetch-programs.sh (not committed).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  program-and-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Solana CLI and Anchor
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v3.1.12/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+          npm i -g @coral-xyz/anchor-cli@0.32.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+      # tests/offchain.test.ts exercises the app's RPC proxy route.
+      - run: npm --prefix app ci
+
+      - name: Rust unit tests
+        run: npm run test:unit
+
+      - name: Build the program and reject SBF diagnostics
+        run: |
+          npm run build 2>&1 | tee program-build.log
+          if grep -E "Stack offset of|undefined and not known syscalls" program-build.log; then
+            echo "::error::the SBF build reported stack or syscall diagnostics"
+            exit 1
+          fi
+
+      - name: Fetch the Meteora programs
+        run: bash scripts/fetch-programs.sh
+
+      - name: LiteSVM, SDK and keeper tests
+        run: npm test
+
+      - name: Type-check SDK, keeper, scripts and tests
+        run: npx tsc --noEmit -p tsconfig.check.json
+
+  app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            app/package-lock.json
+      - run: npm ci
+      - run: npm --prefix app ci
+      - run: npm --prefix app run build
+        env:
+          NEXT_PUBLIC_CLUSTER: devnet
+          NEXT_PUBLIC_RPC_URL: https://api.devnet.solana.com

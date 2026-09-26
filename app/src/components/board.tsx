@@ -25,7 +25,7 @@ export function SlaBoard({ board, book, now, cells = 48, limit, foot = true, tit
   const rows = boardOrder(board.rows).filter((r) => r.status !== "Cancelled");
   const shown = limit ? rows.slice(0, limit) : rows;
   const live = rows.filter((r) => r.status === "Active");
-  const statuses = live.map((r) => slaStatus(r.m, r.status, now, { maker: "", quote: "" }, ago));
+  const statuses = live.map((r) => slaStatus(r.m, r.status, now, { maker: "", quote: "", decimals: board.mints[r.m.quoteMint.toBase58()]?.decimals }, ago));
   const operational = statuses.filter((s) => s.tone === "up").length;
   const starting = statuses.filter((s) => s.tone === "open").length;
   const tone = statuses.some((s) => s.tone === "warn") ? "warn" : "";
@@ -48,7 +48,8 @@ export function SlaBoard({ board, book, now, cells = 48, limit, foot = true, tit
         const m = r.m;
         const quote = board.labels[m.quoteMint.toBase58()]?.symbol ?? "quote";
         const makerName = nameOf(book, m.maker, "The maker");
-        const s = slaStatus(m, r.status, now, { maker: makerName, quote }, ago);
+        const qd = board.mints[m.quoteMint.toBase58()]?.decimals;
+        const s = slaStatus(m, r.status, now, { maker: makerName, quote, decimals: qd }, ago);
         const open = (m.maker as PublicKey).equals(PublicKey.default);
         const profile = board.profiles[m.maker.toBase58()];
         const up = uptime(r.entries);
@@ -61,7 +62,7 @@ export function SlaBoard({ board, book, now, cells = 48, limit, foot = true, tit
             </span>
             <div className="track">
               {r.status === "Open"
-                ? <span className="small muted">Waiting for a maker · {Number(m.terms.feePerPeriod) / 1e6} {quote} per compliant period · {Number(m.terms.bondAmount) / 1e6} {quote} bond</span>
+                ? <span className="small muted">Waiting for a maker{qd !== undefined && <> · {Number(m.terms.feePerPeriod) / 10 ** qd} {quote} per compliant period · {Number(m.terms.bondAmount) / 10 ** qd} {quote} bond</>}</span>
                 : <Ticks ticks={boardTicks(m, r.status, r.entries, cells)} label="Recent periods" />}
             </div>
             <span className="uptime" title="Share of checked periods that met every obligation">{r.status === "Open" ? "" : pct(up)}</span>

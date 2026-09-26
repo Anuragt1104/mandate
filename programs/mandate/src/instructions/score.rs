@@ -135,11 +135,15 @@ pub fn snapshot<'info>(ctx: Context<'_, '_, 'info, 'info, Snapshot<'info>>) -> R
     let pair = dlmm::read_lb_pair(&ctx.accounts.lb_pair)?;
     let sample = dlmm::read_oracle_latest(&ctx.accounts.oracle)?;
     anchor::refresh(m, sample, pair.bin_step, now);
-    if now < m.start_ts + SETUP_GRACE_SECS {
+    // Setup window: scoring starts at `start_ts`.
+    if now < m.start_ts {
         return Ok(());
     }
-    let pool = damm_v2::read_pool(&ctx.accounts.reference_pool)?;
-    let damm_price = damm_v2::reference_price(&pool, &m.base_mint, &m.quote_mint)?;
+    // Informational only, so it must never stop a check: an unreadable pool records
+    // u16::MAX as the deviation.
+    let damm_price = damm_v2::read_pool(&ctx.accounts.reference_pool)
+        .and_then(|pool| damm_v2::reference_price(&pool, &m.base_mint, &m.quote_mint))
+        .ok();
     let anchor_price = price_from_bin_id(m.anchor.bin, pair.bin_step).ok_or(MandateError::MathOverflow)?;
 
     // Position (optional).
@@ -179,7 +183,7 @@ pub fn snapshot<'info>(ctx: Context<'_, '_, 'info, 'info, Snapshot<'info>>) -> R
         spread_bps: c.spread_bps,
         bid_depth_quote: c.bid_depth_quote,
         ask_depth_quote: c.ask_depth_quote,
-        ref_deviation_bps: deviation_bps(anchor_price, damm_price),
+        ref_deviation_bps: damm_price.map_or(u16::MAX, |p| deviation_bps(anchor_price, p)),
         active_id: pair.active_id,
         anchor_bin: m.anchor.bin,
     };
@@ -220,11 +224,15 @@ pub struct Finalize<'info> {
 }
 
 /// Permissionless: advance scoring through all elapsed periods (and expire if due).
+/// Idempotent: on a mandate that is no longer active it does nothing, so a batch of
+/// finalizes (or competing keepers) cannot roll back an earlier breach or expiry.
 pub fn finalize(ctx: Context<Finalize>) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     let key = ctx.accounts.mandate.key();
     let m = &mut ctx.accounts.mandate;
-    require!(m.status == MandateStatus::Active, MandateError::InvalidStatus);
+    if m.status != MandateStatus::Active {
+        return Ok(());
+    }
     let mut log = ctx.accounts.score_log.load_mut()?;
     finalize_through(m, key, &mut log, &mut ctx.accounts.maker_profile, now)
 }

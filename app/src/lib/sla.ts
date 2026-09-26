@@ -21,7 +21,8 @@ export interface PeriodEntry {
 const n = (v: any) => Number(v?.toString?.() ?? v);
 const EMPTY_SIDE = 65535;
 
-export function quoteUnits(m: any, decimals = 6) {
+/** Quote amounts in UI units, in the quote mint's own decimals (never assumed). */
+export function quoteUnits(decimals: number) {
   return (v: any) => n(v) / 10 ** decimals;
 }
 
@@ -46,10 +47,11 @@ export function missed(m: any): string[] {
   return out;
 }
 
-export function slaStatus(m: any, status: StatusName, now: number, names: { maker: string; quote: string }, ago: (s: number) => string): SlaStatus {
+export function slaStatus(m: any, status: StatusName, now: number, names: { maker: string; quote: string; decimals: number | undefined }, ago: (s: number) => string): SlaStatus {
   const t = m.terms;
-  const q = quoteUnits(m);
-  const bond = q(t.bondAmount).toLocaleString("en-US");
+  const q = names.decimals === undefined ? () => NaN : quoteUnits(names.decimals);
+  const money = (v: any) => (names.decimals === undefined ? "an unknown amount of" : q(v).toLocaleString("en-US"));
+  const bond = money(t.bondAmount);
   switch (status) {
     case "Open": {
       const designated = !(m.maker as PublicKey).equals(PublicKey.default);
@@ -61,8 +63,11 @@ export function slaStatus(m: any, status: StatusName, now: number, names: { make
       };
     }
     case "Active": {
+      if (now < n(m.startTs)) {
+        return { tone: "open", word: "Starting", headline: "Setting up", detail: `${names.maker} has accepted and is placing its quotes. Scoring starts at the end of the one-minute setup window.` };
+      }
       if (!m.snapshotsTotal) {
-        return { tone: "open", word: "Starting", headline: "Setting up", detail: `${names.maker} has accepted and is placing its quotes. Checks count after a one-minute setup window.` };
+        return { tone: "warn", word: "Unmonitored", headline: "Not checked yet", detail: "Scoring has started but nobody has checked yet. Periods nobody checks are neither paid nor failed; anyone can run a check." };
       }
       const since = now - n(m.last.ts);
       if (since > 3 * t.periodSecs + 60) {
@@ -77,7 +82,7 @@ export function slaStatus(m: any, status: StatusName, now: number, names: { make
         tone: "warn",
         word: "Degraded",
         headline: "Degraded",
-        detail: `Last check, ${ago(since)}: ${miss.join(", ") || "an obligation was missed"}. ${streak ? `${streak} failed period${streak === 1 ? "" : "s"} in a row; ` : ""}the bond is slashed after ${t.maxConsecutiveFailures}.`,
+        detail: `Last check, ${ago(since)}: ${miss.join(", ") || "an obligation was missed"}. ${streak ? `${streak} failed period${streak === 1 ? "" : "s"} with no pass since; ` : ""}the bond is slashed after ${t.maxConsecutiveFailures}.`,
       };
     }
     case "Breached":
@@ -85,13 +90,13 @@ export function slaStatus(m: any, status: StatusName, now: number, names: { make
         tone: "down",
         word: "Breached",
         headline: "Breached",
-        detail: `${names.maker} missed ${t.maxConsecutiveFailures} periods in a row. ${q(m.bondSlashed).toLocaleString("en-US")} ${names.quote} of its bond was slashed and the agreement ended.`,
+        detail: `${names.maker} failed ${t.maxConsecutiveFailures} checked periods with no passing period between them. ${money(m.bondSlashed)} ${names.quote} of its bond was slashed and the agreement ended.`,
       };
     case "Expired":
       return { tone: "ended", word: "Term complete", headline: "Term complete", detail: "The agreement ran its full term. Anyone can unwind the position and settle." };
     case "Settled":
       return n(m.bondSlashed) > 0
-        ? { tone: "down", word: "Breached", headline: "Breached and settled", detail: `${names.maker} was slashed ${q(m.bondSlashed).toLocaleString("en-US")} ${names.quote}. The inventory went back to the issuer.` }
+        ? { tone: "down", word: "Breached", headline: "Breached and settled", detail: `${names.maker} was slashed ${money(m.bondSlashed)} ${names.quote}. The inventory went back to the issuer.` }
         : { tone: "ended", word: "Settled", headline: "Completed and settled", detail: "The term ended and every balance was paid out." };
     case "Cancelled":
       return { tone: "ended", word: "Cancelled", headline: "Cancelled", detail: "The issuer withdrew the offer before any maker accepted." };
@@ -118,9 +123,9 @@ export interface Obligation {
 }
 
 /** Per-obligation uptime from the score log, with the current period as a live tick. */
-export function obligations(m: any, status: StatusName, entries: PeriodEntry[], cells: number, quote: string, fmt: (x: number) => string): { rows: Obligation[]; overall: Tick[] } {
+export function obligations(m: any, status: StatusName, entries: PeriodEntry[], cells: number, quote: string, fmt: (x: number) => string, decimals: number): { rows: Obligation[]; overall: Tick[] } {
   const t = m.terms;
-  const q = quoteUnits(m);
+  const q = quoteUnits(decimals);
   const min = n(t.minDepthQuote);
   const window = `${t.depthWindowBps / 100}%`;
   const shown = entries.slice(-(cells - 1));
@@ -146,10 +151,10 @@ export function obligations(m: any, status: StatusName, entries: PeriodEntry[], 
   };
 
   const rows = [
-    make("bids", "Bid depth", `≥ ${fmt(q(min))} ${quote} within ${window} below`,
+    make("bids", "Bid depth", `≥ ${fmt(q(min))} ${quote} in the bins within ${window} below`,
       (e) => n(e.minBidDepth) >= min, (e) => `Lowest bids ${fmt(q(e.minBidDepth))} ${quote}`,
       () => n(m.curMinBidDepth) >= min, () => `${fmt(q(m.last.bidDepthQuote))} ${quote}`, () => n(m.last.bidDepthQuote) >= min),
-    make("asks", "Ask depth", `≥ ${fmt(q(min))} ${quote} within ${window} above`,
+    make("asks", "Ask depth", `≥ ${fmt(q(min))} ${quote} in the bins within ${window} above`,
       (e) => n(e.minAskDepth) >= min, (e) => `Lowest asks ${fmt(q(e.minAskDepth))} ${quote}`,
       () => n(m.curMinAskDepth) >= min, () => `${fmt(q(m.last.askDepthQuote))} ${quote}`, () => n(m.last.askDepthQuote) >= min),
     make("spread", "Spread", `≤ ${t.maxSpreadBps} bps at size`,

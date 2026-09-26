@@ -94,6 +94,22 @@ pub struct MandateSettled {
 }
 
 #[event]
+pub struct LeftoverRecovered {
+    pub mandate: Pubkey,
+    pub base_mint: Pubkey,
+    pub to: Pubkey,
+    pub amount: u64,
+}
+
+#[event]
+pub struct VaultsSwept {
+    pub mandate: Pubkey,
+    pub to_issuer_base: u64,
+    pub to_issuer_quote: u64,
+    pub to_bond_owner: u64,
+}
+
+#[event]
 pub struct LeftoverRouted {
     pub mandate: Pubkey,
     pub base_mint: Pubkey,

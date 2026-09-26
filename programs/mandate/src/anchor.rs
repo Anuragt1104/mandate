@@ -15,8 +15,10 @@
 //! credits the new bin for all the time since the previous update (reproduced in
 //! `tests/anchor.test.ts`). It needs an empty active bin. With a mandate in place that
 //! usually means the maker removed the vault's liquidity there, so such removals
-//! "taint" the oracle: a TWAP window must start at a sample recorded after the taint.
-//! The speed limit bounds whatever is left.
+//! "taint" the oracle: a TWAP window must start at a sample recorded strictly after the
+//! taint. A sample stamped in the same second as the removal may have been taken just
+//! before it (same transaction or not), so it is treated as tainted too. The speed limit
+//! bounds whatever is left.
 
 use crate::state::{Anchor, Mandate};
 
@@ -33,21 +35,23 @@ impl Anchor {
     }
 
     /// Record the latest oracle sample. Returns the TWAP bin once a full window of at
-    /// least `twap_secs` is available after the last taint.
+    /// least `twap_secs` is available strictly after the last taint.
     pub fn observe(&mut self, sample: Option<OracleSample>, twap_secs: u32) -> Option<i32> {
         let s = sample?;
         if s.ts <= 0 {
             return None;
         }
-        if self.start_ts < self.taint_ts {
+        // Samples at or before a taint may include misattributed time, whether they were
+        // saved earlier or arrive now.
+        if self.start_ts != 0 && self.start_ts <= self.taint_ts {
             self.start_ts = 0;
             self.start_cum = 0;
         }
-        if self.next_ts < self.taint_ts {
+        if self.next_ts != 0 && self.next_ts <= self.taint_ts {
             self.next_ts = 0;
             self.next_cum = 0;
         }
-        if s.ts < self.taint_ts {
+        if s.ts <= self.taint_ts {
             return None;
         }
         if self.next_ts == 0 {
@@ -109,7 +113,7 @@ impl Anchor {
         self.bin = if target > self.bin { self.bin + mv } else { self.bin - mv };
     }
 
-    /// Oracle samples recorded before `now` may contain misattributed time.
+    /// Oracle samples recorded at or before `now` may contain misattributed time.
     pub fn taint(&mut self, now: i64) {
         self.taint_ts = self.taint_ts.max(now);
     }
@@ -167,9 +171,56 @@ mod tests {
         assert_eq!(a.observe(sample(0, 1_350), 300), None);
         // The first sample after the taint may include misattributed time: it can only
         // start a window, never end one.
-        assert_eq!(a.observe(sample(120_000, 1_400), 300), None);
-        assert_eq!(a.start_ts, 1_400);
-        assert_eq!(a.observe(sample(120_000 + 5 * 300, 1_700), 300), Some(5));
+        assert_eq!(a.observe(sample(120_000, 1_401), 300), None);
+        assert_eq!(a.start_ts, 1_401);
+        assert_eq!(a.observe(sample(120_000 + 5 * 300, 1_701), 300), Some(5));
+    }
+
+    #[test]
+    fn same_second_sample_is_tainted() {
+        // Oracle sample at 400, liquidity removed in the same second, active bin moved
+        // with go_to_a_bin, and a swap 600 s later credits bin 200 for the whole gap.
+        let mut a = Anchor::new(0, 0);
+        assert_eq!(a.observe(sample(0, 400), 300), None);
+        a.taint(400);
+        assert_eq!(a.observe(sample(200 * 600, 1_000), 300), None, "the sample at the taint cannot start a window");
+        assert_eq!(a.start_ts, 1_000, "the first later sample is only a baseline");
+        // A full clean window after the baseline is required.
+        assert_eq!(a.observe(sample(200 * 600 + 10 * 299, 1_299), 300), None);
+        assert_eq!(a.observe(sample(200 * 600 + 10 * 300, 1_300), 300), Some(10));
+    }
+
+    #[test]
+    fn a_sample_at_the_taint_arriving_later_is_rejected() {
+        let mut a = Anchor::new(0, 0);
+        a.taint(500);
+        assert_eq!(a.observe(sample(123, 500), 300), None);
+        assert_eq!((a.start_ts, a.next_ts), (0, 0));
+    }
+
+    #[test]
+    fn repeated_taints_restart_the_window() {
+        let mut a = Anchor::new(0, 0);
+        a.observe(sample(0, 1_000), 300);
+        a.taint(1_100);
+        a.observe(sample(0, 1_200), 300);
+        a.taint(1_450);
+        // The baseline at 1_200 is now tainted as well.
+        assert_eq!(a.observe(sample(50 * 1_000, 1_600), 300), None);
+        assert_eq!(a.start_ts, 1_600);
+        assert_eq!(a.observe(sample(50 * 1_000 + 7 * 300, 1_900), 300), Some(7));
+    }
+
+    #[test]
+    fn stale_sample_does_not_complete_a_window() {
+        // No swaps after the taint: the oracle's latest sample stays at or before it.
+        let mut a = Anchor::new(0, 0);
+        a.observe(sample(0, 1_000), 300);
+        a.taint(2_000);
+        for _ in 0..3 {
+            assert_eq!(a.observe(sample(0, 1_000), 300), None);
+        }
+        assert_eq!((a.start_ts, a.next_ts), (0, 0));
     }
 
     #[test]

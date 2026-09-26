@@ -1,0 +1,17 @@
+{
+  "reviewedCommit": "e607bc4",
+  "probes": [
+    {
+      "id": "negative-transaction-cache",
+      "upstreamCalls": 1,
+      "secondResponseSource": "cache",
+      "result": null,
+      "configuredTtlSeconds": 3600
+    },
+    {
+      "id": "proxy-key-reflection",
+      "httpStatus": 502,
+      "dummyCredentialInResponse": true
+    }
+  ]
+}

@@ -128,4 +128,14 @@ pub mod mandate {
     pub fn route_leftover(ctx: Context<RouteLeftover>) -> Result<()> {
         instructions::router::route_leftover(ctx)
     }
+
+    /// Permissionless: once the mandate has ended, send leftover supply to its issuer.
+    pub fn recover_leftover(ctx: Context<RecoverLeftover>) -> Result<()> {
+        instructions::router::recover_leftover(ctx)
+    }
+
+    /// Permissionless: return tokens that reached a settled or cancelled mandate's vaults.
+    pub fn sweep(ctx: Context<Sweep>) -> Result<()> {
+        instructions::settle::sweep(ctx)
+    }
 }

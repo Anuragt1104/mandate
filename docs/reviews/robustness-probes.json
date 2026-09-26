@@ -1,0 +1,86 @@
+{
+  "reviewedCommit": "e607bc4",
+  "probes": [
+    {
+      "id": "unfunded-acceptance",
+      "evidence": {
+        "status": "Active",
+        "feeBalance": "0",
+        "promised": 200
+      }
+    },
+    {
+      "id": "batched-finalize-rollback",
+      "evidence": {
+        "batchError": "InvalidStatus",
+        "batchPeriod": 1,
+        "singleFinalize": "Breached"
+      }
+    },
+    {
+      "id": "cancelled-route-stranding",
+      "evidence": {
+        "routerTokensRemaining": "1000000",
+        "error": "InvalidStatus"
+      }
+    },
+    {
+      "id": "unauthenticated-jev-memo",
+      "evidence": {
+        "sourceAccepted": "jev-1.13.0+rules",
+        "modelWasCalled": false
+      }
+    },
+    {
+      "id": "unvalidated-model-result",
+      "evidence": {
+        "acceptedProbability": 17
+      }
+    },
+    {
+      "id": "rpc-key-in-error",
+      "evidence": {
+        "dummyCredentialReflected": true
+      }
+    },
+    {
+      "id": "wrong-setup-window",
+      "evidence": {
+        "ageSeconds": 600,
+        "actualGraceSeconds": 60,
+        "rules": "not_started"
+      }
+    },
+    {
+      "id": "watchtower-account-limit",
+      "evidence": {
+        "activeMandates": 34,
+        "attemptedAccounts": 102
+      }
+    },
+    {
+      "id": "stale-model-republished",
+      "evidence": {
+        "modelAgeSeconds": 100000,
+        "diagnosis": "withdrew_liquidity",
+        "breach": 0.01,
+        "source": "jev-test+rules"
+      }
+    },
+    {
+      "id": "cross-mandate-activity",
+      "evidence": {
+        "requestedMandate": "A",
+        "eventMandate": "B",
+        "attributedToA": true
+      }
+    },
+    {
+      "id": "null-transaction-skipped",
+      "evidence": {
+        "markedSeen": true,
+        "cursorAdvanced": true
+      }
+    }
+  ]
+}

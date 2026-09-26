@@ -8,9 +8,16 @@
  * upstream is slow, a recent answer is served at once and refreshed after the response, so
  * dashboards keep moving through public-RPC slowdowns. Only the methods the app uses are
  * forwarded, and program scans are limited to the Mandate program.
+ *
+ * The upstream budget is shared, so each client (by IP) and the instance as a whole are
+ * rate limited, and each call's cost is bounded (keys per read, signatures per page,
+ * transaction size). Errors never carry upstream details: the client gets a correlation id
+ * and the redacted cause is logged server-side. A `getTransaction` that returns null (not yet
+ * available at this commitment) is never cached. `?fresh=1` (used by wallet actions) skips the
+ * cache entirely, so a transaction is built from current state.
  */
 import { after } from "next/server";
-import { failoverFetch, PUBLIC_FALLBACKS } from "../../../../../sdk/src/rpc";
+import { failoverFetch, PUBLIC_FALLBACKS, redact } from "../../../../../sdk/src/rpc";
 
 export const runtime = "edge";
 
@@ -24,8 +31,38 @@ const ALLOWED = new Set([
   "getAccountInfo", "getMultipleAccounts", "getProgramAccounts", "getBalance", "getTokenAccountBalance", "getTokenAccountsByOwner",
   "getSignaturesForAddress", "getTransaction", "getSignatureStatuses", "getLatestBlockhash", "isBlockhashValid", "getFeeForMessage",
   "getMinimumBalanceForRentExemption", "getRecentPrioritizationFees", "getSlot", "getBlockHeight", "getBlockTime", "getEpochInfo",
-  "getGenesisHash", "getVersion", "getHealth", "sendTransaction", "simulateTransaction", "requestAirdrop",
+  "getGenesisHash", "getVersion", "getHealth", "sendTransaction", "simulateTransaction",
+  ...(CLUSTER === "mainnet-beta" ? [] : ["requestAirdrop"]),
 ]);
+
+/** Per-call cost bounds; anything larger is refused before it reaches the upstream. */
+function tooExpensive(c: any): string | null {
+  const p = c.params ?? [];
+  if (c.method === "getMultipleAccounts" && (!Array.isArray(p[0]) || p[0].length > 100)) return "at most 100 accounts per call";
+  if (c.method === "getSignatureStatuses" && (!Array.isArray(p[0]) || p[0].length > 256)) return "at most 256 signatures per call";
+  if (c.method === "getSignaturesForAddress" && (p[1]?.limit ?? 1000) > 100) return "at most 100 signatures per page";
+  if ((c.method === "sendTransaction" || c.method === "simulateTransaction") && (typeof p[0] !== "string" || p[0].length > 2_000)) return "transaction too large";
+  return null;
+}
+
+/** Token buckets per client and for the instance (edge instances don't share them; they bound each one). */
+const CLIENT_RATE = { perSec: 15, burst: 60 };
+const WRITE_RATE = { perSec: 0.5, burst: 5 };
+const GLOBAL_RATE = { perSec: 150, burst: 400 };
+const buckets = new Map<string, { tokens: number; at: number }>();
+function take(key: string, rate: { perSec: number; burst: number }, cost = 1): boolean {
+  const now = Date.now();
+  const b = buckets.get(key) ?? { tokens: rate.burst, at: now };
+  b.tokens = Math.min(rate.burst, b.tokens + ((now - b.at) / 1000) * rate.perSec);
+  b.at = now;
+  buckets.set(key, b);
+  if (buckets.size > 5_000) buckets.delete(buckets.keys().next().value!);
+  if (b.tokens < cost) return false;
+  b.tokens -= cost;
+  return true;
+}
+const MAX_CONCURRENT = 64;
+let running = 0;
 
 /** How long a read stays fresh, and how long a stale copy may stand in while it refreshes. */
 const FRESH_MS: Record<string, number> = {
@@ -37,8 +74,8 @@ const STALE_MS = 90_000;
 const cache = new Map<string, { at: number; status: number; result: string }>();
 const inflight = new Map<string, Promise<{ status: number; result: string }>>();
 
-function refuse(id: unknown, message: string) {
-  return Response.json({ jsonrpc: "2.0", id: id ?? null, error: { code: -32601, message } });
+function refuse(id: unknown, message: string, status = 200) {
+  return Response.json({ jsonrpc: "2.0", id: id ?? null, error: { code: -32601, message } }, { status });
 }
 
 async function forward(body: string): Promise<{ status: number; result: string }> {
@@ -52,7 +89,10 @@ function load(key: string, call: any): Promise<{ status: number; result: string 
   if (!p) {
     p = forward(JSON.stringify({ ...call, id: 1 }))
       .then((r) => {
-        if (r.status === 200 && !/"error"\s*:/.test(r.result.slice(0, 200))) cache.set(key, { at: Date.now(), ...r });
+        // A null result can mean "not available yet" (getTransaction at this commitment);
+        // caching it would hide the transaction for as long as the entry lives.
+        if (r.status === 200 && !/"error"\s*:/.test(r.result.slice(0, 200)) && !/"result"\s*:\s*null\b/.test(r.result.slice(0, 200)))
+          cache.set(key, { at: Date.now(), ...r });
         return r;
       })
       .finally(() => inflight.delete(key));
@@ -86,10 +126,21 @@ export async function POST(req: Request) {
   for (const c of list) {
     if (!ALLOWED.has(c?.method)) return refuse(c?.id, `method ${String(c?.method)} is not served by this proxy`);
     if (c.method === "getProgramAccounts" && c.params?.[0] !== MANDATE_PROGRAM) return refuse(c.id, "program scans are limited to the Mandate program");
+    const why = tooExpensive(c);
+    if (why) return refuse(c.id, why);
   }
 
+  const client = req.headers.get("x-real-ip") ?? req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "anon";
+  const writes = list.filter((c: any) => c.method === "sendTransaction" || c.method === "requestAirdrop").length;
+  const scans = list.filter((c: any) => c.method === "getProgramAccounts").length;
+  const cost = list.length + 4 * scans;
+  if (!take(`c:${client}`, CLIENT_RATE, cost) || (writes && !take(`w:${client}`, WRITE_RATE, writes)) || !take("global", GLOBAL_RATE, cost))
+    return refuse(list[0]?.id, "rate limited: slow down", 429);
+  if (running >= MAX_CONCURRENT) return refuse(list[0]?.id, "busy: retry shortly", 503);
+  running++;
   try {
-    const fresh = !Array.isArray(calls) ? FRESH_MS[calls.method] : undefined;
+    const bypass = new URL(req.url).searchParams.get("fresh") === "1";
+    const fresh = !Array.isArray(calls) && !bypass ? FRESH_MS[calls.method] : undefined;
     if (!fresh) {
       const r = await forward(body);
       return reply(r.status, r.result, "upstream");
@@ -106,6 +157,10 @@ export async function POST(req: Request) {
     const r = await load(key, calls);
     return reply(r.status, withId(r.result, calls.id), "upstream");
   } catch (e: any) {
-    return Response.json({ jsonrpc: "2.0", id: list[0]?.id ?? null, error: { code: -32000, message: `upstream RPC unavailable: ${e?.message ?? e}` } }, { status: 502 });
+    const ref = crypto.randomUUID().slice(0, 8);
+    console.error(`rpc proxy ${ref}: ${redact(e?.message ?? String(e))}`);
+    return Response.json({ jsonrpc: "2.0", id: list[0]?.id ?? null, error: { code: -32000, message: `upstream RPC unavailable (ref ${ref})` } }, { status: 502 });
+  } finally {
+    running--;
   }
 }
