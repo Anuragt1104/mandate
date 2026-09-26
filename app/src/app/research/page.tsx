@@ -95,6 +95,13 @@ export default function Research() {
                 the price 2% each way: Δquote = L·(√P₂ − √P₁)/2¹²⁸, clamped to the pool&apos;s price range. Depth is the smaller of the bid and ask
                 side, converted to USD with the quote token&apos;s price.
               </p>
+              <p>
+                Limits. This is one snapshot of recently created pools, most of them days old, on one venue. It says nothing about a
+                token&apos;s liquidity on other venues, about whether a team has a budget, or whether anyone wants to trade it: a thin pool can
+                mean a neglected market, missing quote capital, or no demand. Some pools pair large trailing 24-hour volume with almost no
+                current depth, which fits liquidity that was withdrawn after trading; that pattern needs a time series, not a snapshot, before
+                drawing conclusions. Treat the numbers as where the problem shows, not as a count of buyers.
+              </p>
               <p>Reproduce it with <code>npx tsx scripts/liquidity-study.ts --pages 30</code> from the <a className="link" href={REPO_URL} target="_blank" rel="noreferrer">repository</a>.</p>
             </div>
             <div className="row wrap" style={{ marginTop: 8 }}>

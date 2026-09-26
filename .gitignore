@@ -16,3 +16,6 @@ app/public/demo.json
 *.tsbuildinfo
 
 app/public/personas.json
+.vercel
+.env*.local
+reports/

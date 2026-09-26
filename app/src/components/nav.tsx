@@ -23,7 +23,7 @@ export const PROGRAM_ID = "3YetFVe4F6MuYaHH7pAmTCZjtMnunQT1ufMdAY8rYFrn";
 const APP_NAV = [
   { href: "/app", label: "Network", match: (p: string) => p === "/app" || p.startsWith("/app/mandate") },
   { href: "/app/makers", label: "Makers" },
-  { href: "/app/create", label: "Draft an SLA" },
+  { href: "/app/create", label: "Draft an agreement" },
   { href: "/app/launch", label: "Launchpads" },
   { href: "/research", label: "Research" },
 ];
@@ -106,7 +106,7 @@ export function Footer() {
         <nav className="footer-links" aria-label="Footer">
           <Link href="/app">Network</Link>
           <Link href="/app/makers">Maker ratings</Link>
-          <Link href="/app/create">Draft an SLA</Link>
+          <Link href="/app/create">Draft an agreement</Link>
           <Link href="/app/launch">For launchpads</Link>
           <Link href="/research">Research</Link>
           <a href={SECURITY_URL} target="_blank" rel="noreferrer">Security model</a>

@@ -130,10 +130,12 @@ export default function Launch() {
       <div className="page-head">
         <div>
           <span className="eyebrow">For launchpads</span>
-          <h1 className="h1">Launch every token with an SLA</h1>
+          <h1 className="h1">Fund liquidity agreements from your launches</h1>
           <p className="muted" style={{ margin: 0, maxWidth: "70ch" }}>
-            Give every token you launch a market maker under a liquidity SLA. Your bonding-curve config (Meteora DBC) sends each token&apos;s
-            unsold supply to your Mandate router; at graduation it becomes the SLA&apos;s quoting inventory, never a dump.
+            Your bonding-curve config (Meteora DBC) sends each token&apos;s unsold supply to your Mandate router, and at graduation it moves
+            into an agreement&apos;s escrow as quoting inventory instead of into anyone&apos;s wallet. That covers the asks. A working agreement
+            also needs quote tokens for bids, a fee budget, and a maker who accepts and posts a bond, so start with the tokens whose teams
+            will fund those.
           </p>
         </div>
       </div>
@@ -204,8 +206,8 @@ export default function Launch() {
             <div className="card-head"><span className="h3">What changes for your launches</span></div>
             <div className="card-body" style={{ display: "grid", gap: 12 }}>
               {[
-                ["Without an SLA", "Unsold supply goes to a wallet. Graduated pools sit nearly empty, and holders can't trade without moving the price."],
-                ["With an SLA", "Unsold supply sits in escrow that can only quote. A bonded maker keeps both sides of the book, and the token gets a public status page."],
+                ["Without one", "Unsold supply goes to a wallet. Graduated pools sit nearly empty, and holders can't trade without moving the price."],
+                ["With an agreement", "Unsold supply sits in escrow that can only quote. Once the team adds quote tokens and a fee budget and a maker accepts, both sides of the book are under a bonded commitment with a public status page."],
               ].map(([t, d], i) => (
                 <div key={t} style={{ display: "grid", gap: 4, paddingBottom: i === 0 ? 12 : 0, borderBottom: i === 0 ? "1px solid var(--line)" : undefined }}>
                   <span className={`tag ${i === 0 ? "fail" : "pass"}`} style={{ justifySelf: "start" }}>{t}</span>

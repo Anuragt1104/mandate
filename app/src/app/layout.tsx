@@ -7,13 +7,13 @@ const chivo = Chivo({ subsets: ["latin"], variable: "--font-chivo", display: "sw
 const chivoMono = Chivo_Mono({ subsets: ["latin"], variable: "--font-chivo-mono", display: "swap" });
 
 export const metadata: Metadata = {
-  title: { default: "Mandate: liquidity SLAs for token markets", template: "%s · Mandate" },
+  title: { default: "Mandate: accountable liquidity management on Solana", template: "%s · Mandate" },
   description:
-    "Put a token's market maker under a liquidity SLA on Solana. Quotes are checked at random by anyone, every period is scored on-chain, and a maker who stops quoting loses its bond.",
+    "Hire a liquidity manager without handing over your tokens. Inventory sits in a vault the manager can only quote from, the manager posts a bond, and every period is checked in public and settled automatically.",
   metadataBase: new URL("https://mandate-lac-rho.vercel.app"),
   openGraph: {
     title: "Mandate",
-    description: "Uptime for token markets: liquidity SLAs enforced on Solana.",
+    description: "Accountable liquidity management: restricted custody and automatic settlement for market-making agreements.",
     type: "website",
   },
 };

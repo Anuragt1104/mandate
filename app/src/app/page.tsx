@@ -58,18 +58,18 @@ const INCIDENTS = [
 const PARTIES = [
   {
     title: "Launchpads",
-    lede: "Graduate every token with a market maker under contract.",
-    points: ["Route a token's unsold supply into an SLA's escrow at graduation", "Give creators a liquidity guarantee as a reason to launch with you", "Publish a status page for every token you list"],
+    lede: "Turn leftover launch supply into a funded agreement.",
+    points: ["Route a graduating token's unsold supply straight into an agreement's escrow as inventory", "Pair it with a quote deposit, a fee budget and a maker you vet", "Publish a status page for every token under agreement"],
   },
   {
     title: "Token teams",
-    lede: "Stop lending inventory to market makers on trust.",
-    points: ["Inventory can only be quoted, then comes back", "Pay per compliant period, not per monthly report", "Replace a maker the day it stops quoting"],
+    lede: "Keep your operator, lose the blind trust.",
+    points: ["Inventory can only be quoted, then comes back", "Pay per verified period instead of settling an invoice by hand", "A breach penalises the bond and returns the inventory"],
   },
   {
     title: "Market makers",
-    lede: "Win mandates on a record nobody can dispute.",
-    points: ["Every period you meet is written to your profile", "A credit-style rating any issuer can recompute", "Terms and payment are code, not negotiation"],
+    lede: "Get paid on a record nobody can dispute.",
+    points: ["Every period you meet is written to your profile", "Payment is automatic once the terms are met", "Terms are fixed up front: bond, fee, penalty, term, no surprises"],
   },
 ];
 
@@ -84,10 +84,10 @@ export default function Landing() {
           <div className="container">
             <div className="section-head">
               <span className="kicker">The agreement</span>
-              <h2 className="h2">Every promise a market maker makes, written as a clause the program enforces.</h2>
+              <h2 className="h2">The terms both sides agree to, enforced by the program.</h2>
               <p className="body-lg">
-                Market-making terms usually live in a PDF and a monthly report the maker writes itself. In Mandate they are account data:
-                the checks, the payments and the penalties run on Solana, and the record is public.
+                Monitoring a market maker is not new; dashboards and reports exist. What changes is custody and settlement: the inventory can
+                only be used for quoting, and payment and penalties follow the checks automatically instead of by invoice.
               </p>
             </div>
             <div className="contract">
@@ -104,6 +104,30 @@ export default function Landing() {
                   </div>
                 ))}
                 <a className="link small" href={SECURITY_URL} target="_blank" rel="noreferrer">Read the security model</a>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="section tight" style={{ paddingTop: 0 }}>
+          <div className="container">
+            <div className="contract">
+              <div className="contract-col">
+                <span className="eyebrow">Enforced</span>
+                <span className="h3" style={{ fontSize: 18 }}>Committed liquidity near the reference price</span>
+                <p className="muted" style={{ margin: 0, lineHeight: 1.6 }}>
+                  Where the manager placed the inventory, valued bin by bin. Trades move value between the two tokens inside a bin, not out
+                  of the book, so nobody can fail an honest manager by buying out its asks, or rescue a negligent one.
+                </p>
+              </div>
+              <div className="contract-col">
+                <span className="eyebrow">Shown, not enforced</span>
+                <span className="h3" style={{ fontSize: 18 }}>What a trader gets right now</span>
+                <p className="muted" style={{ margin: 0, lineHeight: 1.6 }}>
+                  Execution cost at several trade sizes and routability, on every status page. These move with every trade, which is why they
+                  can&apos;t be the obligation. When a side is drained, the manager has to re-quote it before the reference price catches up, or
+                  that side starts counting as missing.
+                </p>
               </div>
             </div>
           </div>
@@ -159,11 +183,15 @@ export default function Landing() {
         <section className="section" style={{ paddingTop: 0 }}>
           <div className="container evidence">
             <div style={{ display: "grid", gap: 18 }}>
-              <span className="kicker">Why it matters</span>
+              <span className="kicker">Exploratory research</span>
               <div className="stat-big">{Math.round(underCent * 100)}%</div>
               <p className="body-lg" style={{ maxWidth: "46ch" }}>
                 of {pools.toLocaleString("en-US")} newly graduated launchpad pools on Solana couldn&apos;t absorb one cent of trading without the price moving 2%.
                 Even pools that traded over $10,000 in a day held a median of ${s.volume24hAtLeast10k.medianDepth2pctUsd.toFixed(3)} of depth.
+              </p>
+              <p className="small muted" style={{ margin: 0, maxWidth: "46ch" }}>
+                A snapshot, not a market size: a thin pool can mean a neglected market, missing quote capital or simply no demand. It shows
+                where the problem appears; the customers are funded teams that already pay for liquidity.
               </p>
               <Link className="link small" href="/research">How we measured it</Link>
             </div>
@@ -182,12 +210,12 @@ export default function Landing() {
           <div className="container">
             <div className="closing">
               <div style={{ display: "grid", gap: 12 }}>
-                <h2 className="h2">Put your token&apos;s liquidity under an SLA.</h2>
-                <p>Watch the network, check a maker&apos;s rating, or draft terms for your own token in a couple of minutes.</p>
+                <h2 className="h2">Put your liquidity operator under an agreement.</h2>
+                <p>Watch the test network, read an agreement in plain words, or draft terms for your own token and operator in a couple of minutes.</p>
               </div>
               <div className="row wrap">
                 <Link className="btn btn-primary btn-lg" href="/app">Open the network <ArrowRight /></Link>
-                <Link className="btn btn-secondary btn-lg" href="/app/create">Draft an SLA</Link>
+                <Link className="btn btn-secondary btn-lg" href="/app/create">Draft an agreement</Link>
               </div>
             </div>
           </div>

@@ -33,7 +33,7 @@ export default function Network() {
             Every liquidity SLA, every check against it and what each one found. Anyone can run a check; the program decides what it means.
           </p>
         </div>
-        <Link className="btn btn-primary" href="/app/create"><FilePen />Draft an SLA</Link>
+        <Link className="btn btn-primary" href="/app/create"><FilePen />Draft an agreement</Link>
       </div>
 
       <div className="kpis">

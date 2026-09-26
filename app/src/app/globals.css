@@ -335,6 +335,7 @@ code, .code { font-family: var(--font-mono); font-size: 0.9em; background: var(-
 .hero { padding-top: 64px; padding-bottom: 40px; }
 .hero-top { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr); gap: 48px; align-items: end; }
 .hero-copy { display: grid; gap: 22px; }
+.display.hero-title { font-size: clamp(36px, 4.6vw, 64px); line-height: 1.02; max-width: 16ch; }
 .hero-side { display: grid; gap: 18px; padding-bottom: 8px; }
 .hero-cta { display: flex; gap: 10px; flex-wrap: wrap; }
 .status-line { display: inline-flex; align-items: center; gap: 9px; font: 500 12px var(--font-mono); letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); flex-wrap: wrap; }

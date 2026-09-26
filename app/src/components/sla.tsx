@@ -5,6 +5,7 @@ import { PublicKey } from "@solana/web3.js";
 import { CircleCheck, CircleDashed, OctagonX, TriangleAlert, Flag, Radar } from "lucide-react";
 import type { Incident, Obligation, Rating, SlaStatus, Tick, Tone } from "@/lib/sla";
 import { DIAGNOSIS_LABELS, type Diagnosis, type SentinelAssessment } from "../../../sdk/src/sentinel";
+import { executable, type Fill } from "../../../sdk/src/measure";
 import { personaOf, type PersonaBook } from "@/lib/personas";
 import { Address, InfoTip, Tip, ago, duration, fmtFull, shortAddr } from "./ui";
 
@@ -308,6 +309,122 @@ export function SentinelCard({ read, at, now }: { read: SentinelAssessment | nul
       <div className="card-foot">
         <span className="xs muted">Advisory. The program pays and slashes from its own measurements; this read only steers where watchtowers look and explains what they see.</span>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- committed vs executable
+
+export function ExecutionPanel({ bins, activeBin, refUi, quote, committedOk, speedPctPerMin, sizes }: {
+  bins: { binId: number; base: number; quote: number; priceUi: number }[];
+  activeBin: number;
+  refUi: number;
+  quote: string;
+  committedOk: boolean | null;
+  speedPctPerMin: number;
+  sizes: number[];
+}) {
+  const book = bins.map((b) => ({ binId: b.binId, base: b.base, quote: b.quote, price: b.priceUi }));
+  const rows = sizes.map((s) => ({ s, ...executable(book, activeBin, refUi, s) }));
+  const cell = (f: Fill) =>
+    f.cost === null ? <span className="faint">no liquidity</span>
+      : <span style={{ color: f.filled < 0.999 ? "var(--down)" : f.cost > 0.05 ? "var(--warn)" : undefined }}>{(f.cost * 100).toFixed(2)}%{f.filled < 0.999 ? ` · ${Math.round(f.filled * 100)}% filled` : ""}</span>;
+  const mid = rows[Math.min(1, rows.length - 1)];
+  const poor = !!committedOk && (mid.buy.cost === null || mid.sell.cost === null || mid.buy.filled < 0.999 || mid.sell.filled < 0.999 || (mid.buy.cost ?? 0) > 0.05 || (mid.sell.cost ?? 0) > 0.05);
+  return (
+    <div style={{ display: "grid", gap: 10 }}>
+      <div className="table-wrap">
+        <table className="table" style={{ fontSize: 13 }}>
+          <thead><tr><th>Trade size</th><th className="r">Buy costs</th><th className="r">Sell costs</th></tr></thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.s}><td className="num">{r.s.toLocaleString("en-US")} {quote}</td><td className="r num">{cell(r.buy)}</td><td className="r num">{cell(r.sell)}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {poor ? (
+        <div className="notice warn">
+          <TriangleAlert />
+          <span>
+            The agreement is met, but trading is poor right now. The agreement measures where the maker committed liquidity, not what is left after trades.
+            When traders drain a side, the maker has to re-quote it before the reference price (moving up to {speedPctPerMin}% a minute) catches up; after that the side counts as missing.
+          </span>
+        </div>
+      ) : (
+        <span className="xs muted">
+          Execution against the maker&apos;s current book only, before swap fees; other liquidity on the pair makes it cheaper. It is shown, not enforced: the agreement measures committed liquidity, which trades can&apos;t fake.
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- the agreement in plain words
+
+export interface AgreementFacts {
+  base: string;
+  quote: string;
+  baseDeposit: number | null;
+  quoteDeposit: number | null;
+  feeBudget: number | null;
+  bond: number;
+  feePerPeriod: number;
+  periodSecs: number;
+  periods: number;
+  minDepth: number;
+  windowPct: number;
+  maxSpreadBps: number;
+  bandPct: number;
+  speedPctPerMin: number;
+  maxFailures: number;
+  slashPct: number;
+  lockSecs: number;
+  maker: string | null; // the maker's name/address, or null when anyone may accept
+  designated?: boolean;
+  endsAt?: number | null; // unix seconds, when known
+}
+
+/** Every term, as a sentence both parties can check before signing. */
+export function AgreementSummary({ f, audience = "both" }: { f: AgreementFacts; audience?: "team" | "maker" | "both" }) {
+  const n = (x: number, d = 2) => fmtFull(x, d);
+  const term = duration(f.periodSecs * f.periods);
+  const maxPay = f.feePerPeriod * f.periods;
+  const returnPct = f.bond > 0 ? (maxPay / f.bond) * 100 : null;
+  const yearly = returnPct !== null ? returnPct * (365 * 86_400) / (f.periodSecs * f.periods) : null;
+  const budgetShort = f.feeBudget !== null && f.feeBudget < maxPay;
+  const items: [string, ReactNode][] = [
+    ["The team puts in", <>
+      {f.baseDeposit !== null || f.quoteDeposit !== null ? <><b>{n(f.baseDeposit ?? 0, 0)} {f.base}</b> and <b>{n(f.quoteDeposit ?? 0)} {f.quote}</b> of inventory</> : "Inventory"} in a vault the maker can only quote from, and {f.feeBudget !== null ? <><b>{n(f.feeBudget)} {f.quote}</b></> : "a fee budget"} to pay for compliant periods.
+      {budgetShort && <> <span style={{ color: "var(--warn)" }}>That budget covers {Math.floor((f.feeBudget ?? 0) / Math.max(f.feePerPeriod, 1e-9)).toLocaleString("en-US")} of {f.periods.toLocaleString("en-US")} periods.</span></>}
+      {" "}Inventory needs both sides: {f.base} for asks and {f.quote} for bids. Leftover launch supply only covers the first.
+    </>],
+    ["The maker commits", <>
+      {f.maker ? <>{f.maker}{f.designated ? " (designated)" : ""}</> : "Any maker who accepts"} posts a <b>{n(f.bond)} {f.quote}</b> bond and keeps at least <b>{n(f.minDepth)} {f.quote}</b> of bids within {f.windowPct}% below the reference price and the same of asks above it, with a spread no wider than {f.maxSpreadBps} bps. Quotes must stay within ±{f.bandPct}%, and each deposit is locked for {f.lockSecs} s.
+    </>],
+    ["What earns pay", <>Each {duration(f.periodSecs)} period in which every check passes pays <b>{n(f.feePerPeriod)} {f.quote}</b>, up to <b>{n(maxPay)} {f.quote}</b> over {term}.</>],
+    ["What counts as a miss", <>A check finds bids or asks below the minimum, or the spread too wide. A period with any failed check pays nothing. If traders drain a side, the maker must re-quote it before the reference price, which moves at most {f.speedPctPerMin}% a minute, catches up.</>],
+    ["The penalty", <><b>{f.maxFailures}</b> failed periods in a row send <b>{f.slashPct}%</b> of the bond to the team and end the agreement. There is no exception for outages or extreme volatility: price that risk into the fee.</>],
+    ["Who checks", <>Anyone can check, at any time, for a network fee of about 0.000005 SOL. Someone has to: a period nobody checks is neither paid nor failed. The team, the launchpad or a watchtower should run one.</>],
+    ["How it ends", <>After {f.periods.toLocaleString("en-US")} periods{f.endsAt ? <> ({new Date(f.endsAt * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })})</> : null}, or at a breach. Neither side can leave early once a maker accepts; until then the team can cancel. At settlement the inventory and unused fees go back to the team and the maker gets its earned fees and remaining bond.</>],
+  ];
+  return (
+    <div style={{ display: "grid", gap: 12 }}>
+      {items.map(([k, v]) => (
+        <div key={k} className="clause" style={{ gridTemplateColumns: "118px minmax(0, 1fr)" }}>
+          <span className="eyebrow" style={{ paddingTop: 2 }}>{k}</span>
+          <span className="small" style={{ color: "var(--ink-2)", lineHeight: 1.55 }}>{v}</span>
+        </div>
+      ))}
+      {audience !== "team" && returnPct !== null && (
+        <div className="notice" style={{ display: "grid", gap: 4 }}>
+          <b style={{ color: "var(--ink)" }}>For the maker</b>
+          <span>
+            Capital locked: {n(f.bond)} {f.quote} bond for {term}, plus the operating cost of quoting. Most it can earn: {n(maxPay)} {f.quote}, {returnPct.toFixed(1)}% on the bond
+            {yearly !== null && isFinite(yearly) ? ` (${yearly >= 1000 ? "over 1,000" : yearly.toFixed(0)}% a year)` : ""} if every period passes. The inventory&apos;s trading gains or losses stay in the vault and go back to the team.
+          </span>
+        </div>
+      )}
     </div>
   );
 }

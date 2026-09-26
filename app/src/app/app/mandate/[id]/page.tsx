@@ -12,10 +12,12 @@ import { loadMandate, type MandateView } from "@/lib/loaders";
 import { connection } from "@/lib/chain";
 import { loadFeed } from "@/lib/feed";
 import { usePersonas, type PersonaBook } from "@/lib/personas";
+import type { FeedEvent } from "@/lib/feed";
+import { explorerUrl } from "@/lib/chain";
 import { incidents, obligations, pct, rating, roundTrip, slaStatus, uptime } from "@/lib/sla";
 import { LiquidityChart, LiquidityLegend } from "@/components/charts";
 import { ActivityFeed } from "@/components/feed";
-import { Grade, IncidentList, ObligationRows, Party, SentinelCard, SlaBanner, Schedule, StatusChip, TickLegend, judgeName, nameOf } from "@/components/sla";
+import { AgreementSummary, ExecutionPanel, Grade, IncidentList, ObligationRows, Party, SentinelCard, SlaBanner, Schedule, StatusChip, TickLegend, judgeName, nameOf, type AgreementFacts } from "@/components/sla";
 import { DIAGNOSIS_LABELS } from "../../../../../../sdk/src/sentinel";
 import { WalletButton } from "@/components/wallet";
 import { Address, InfoTip, Skeleton, StatusIcon, TokenPair, ago, countdown, duration, fmt, fmtFull, fmtPrice, shortAddr } from "@/components/ui";
@@ -103,6 +105,27 @@ function Detail({ v, now, reload, error }: { v: MandateView; now: number; reload
     return out;
   }, [incs, events]);
   const read = latestRead?.sentinel;
+  const facts: AgreementFacts = {
+    base, quote,
+    baseDeposit: status === "Open" ? Number(v.balances[0]) / 10 ** bd : null,
+    quoteDeposit: status === "Open" ? Number(v.balances[1]) / 10 ** qd : null,
+    feeBudget: status === "Open" ? Number(v.balances[2]) / 10 ** qd : null,
+    bond: q(t.bondAmount), feePerPeriod: q(t.feePerPeriod), periodSecs: t.periodSecs, periods: t.durationPeriods,
+    minDepth: q(t.minDepthQuote), windowPct: t.depthWindowBps / 100, maxSpreadBps: t.maxSpreadBps, bandPct: t.bandBps / 100,
+    speedPctPerMin: t.anchorSpeedBpsPerMin / 100, maxFailures: t.maxConsecutiveFailures, slashPct: t.slashBps / 100, lockSecs: t.liquidityLockSecs,
+    maker: openToAll ? null : nameOf(book, m.maker, shortAddr(m.maker)),
+    designated: status === "Open" && !openToAll,
+    endsAt: status === "Active" ? m.endTs.toNumber() : null,
+  };
+  const plainWords = (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card-head">
+        <span className="h3">The agreement in plain words</span>
+        <span className="xs muted">{status === "Open" ? "Read this before accepting" : "What both parties signed up to"}</span>
+      </div>
+      <div className="card-body"><AgreementSummary f={facts} audience={status === "Open" ? "maker" : "both"} /></div>
+    </div>
+  );
   const banner = read && status === "Active" && read.diagnosis !== "quoting_normally"
     ? { ...s, detail: `${s.detail} Watchtower read: ${DIAGNOSIS_LABELS[read.diagnosis].toLowerCase()}${isFinite(read.breach) && read.source !== "rules" ? `, breach outlook ${Math.round(read.breach * 100)}%` : ""}.` }
     : s;
@@ -128,6 +151,8 @@ function Detail({ v, now, reload, error }: { v: MandateView; now: number; reload
       </div>
 
       <SlaBanner s={banner} stat={status === "Open" ? { value: `${fmtFull(q(t.feePerPeriod))} ${quote}`, label: `per compliant ${duration(t.periodSecs)}` } : { value: pct(up), label: `uptime · ${entries.filter((e) => e.status !== 3).length} checked periods` }} />
+
+      {status === "Open" && plainWords}
 
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-head">
@@ -165,6 +190,14 @@ function Detail({ v, now, reload, error }: { v: MandateView; now: number; reload
                     : { title: "This SLA has closed", body: "Its liquidity was unwound and every balance paid out." }} />
               ) : <Skeleton h={240} />}
               <LiquidityLegend quoteSymbol={quote} windowBps={t.depthWindowBps} />
+              {chart && chart.bins.length > 0 && (
+                <div style={{ display: "grid", gap: 8, paddingTop: 6 }}>
+                  <span className="h3" style={{ fontSize: 14 }}>What a trader gets right now</span>
+                  <ExecutionPanel bins={chart.bins} activeBin={chart.pair.activeId} refUi={chart.refUi} quote={quote}
+                    committedOk={status === "Active" && m.snapshotsTotal > 0 ? !!m.last.ok : null} speedPctPerMin={t.anchorSpeedBpsPerMin / 100}
+                    sizes={[q(t.minDepthQuote) / 5, q(t.minDepthQuote), q(t.minDepthQuote) * 4].map((x) => Math.max(10, Math.round(x / 10) * 10))} />
+                </div>
+              )}
               {trip && (
                 <div className="notice" style={{ alignItems: "center" }}>
                   <Route />
@@ -206,6 +239,7 @@ function Detail({ v, now, reload, error }: { v: MandateView; now: number; reload
           {status !== "Open" && <SentinelCard read={read ?? null} at={latestRead?.ts ?? null} now={now} />}
           <LatestCheck v={v} now={now} reload={reload} quote={quote} q={q} />
           <ActionsCard v={v} now={now} reload={reload} periodEnd={periodEnd} book={book} />
+          {(status === "Settled" || status === "Breached") && <SettlementReceipt v={v} events={events} base={base} quote={quote} bd={bd} qd={qd} book={book} />}
           <div className="card">
             <div className="card-head"><span className="h3">Escrow</span><span className="xs muted">Held by the program</span></div>
             <div className="card-body">
@@ -215,7 +249,9 @@ function Detail({ v, now, reload, error }: { v: MandateView; now: number; reload
         </div>
       </div>
 
-      <div className="contract" style={{ marginTop: 16 }}>
+      {status !== "Open" && <div style={{ marginTop: 16 }}>{plainWords}</div>}
+
+      <div className="contract" style={{ marginTop: status === "Open" ? 16 : 0 }}>
         <div className="contract-col">
           <div className="row-between"><span className="h3">The agreement</span><span className="xs muted">Fixed when it was created</span></div>
           <Schedule t={t} quote={quote} decimals={qd} />
@@ -464,6 +500,41 @@ function ActionsCard({ v, now, reload, periodEnd, book }: { v: MandateView; now:
         )}
         {me && (status === "Settled" || status === "Cancelled") && <p className="small muted" style={{ margin: 0 }}>This SLA is closed. Every balance has been paid out.</p>}
         {busy && <span className="xs muted">{busy}: waiting for confirmation…</span>}
+      </div>
+    </div>
+  );
+}
+
+/** Who got what when the agreement ended, from the settlement and slash events where available. */
+function SettlementReceipt({ v, events, base, quote, bd, qd, book }: { v: MandateView; events: FeedEvent[] | null; base: string; quote: string; bd: number; qd: number; book: PersonaBook }) {
+  const { m, status } = v;
+  const settled = events?.find((e) => e.name === "mandateSettled");
+  const slashed = events?.find((e) => e.name === "makerSlashed");
+  const q = (x: any) => Number(x?.toString?.() ?? x) / 10 ** qd;
+  const b = (x: any) => Number(x?.toString?.() ?? x) / 10 ** bd;
+  const team = nameOf(book, m.issuer, "The team");
+  const maker = nameOf(book, m.maker, "The maker");
+  const link = (e?: FeedEvent) => (e ? <a className="link xs" href={explorerUrl(e.sig)} target="_blank" rel="noreferrer">transaction</a> : null);
+  const rows: [string, React.ReactNode, React.ReactNode][] = [];
+  if (Number(m.bondSlashed) > 0) rows.push([`Slashed from ${maker}'s bond to ${team}`, <b key="s" style={{ color: "var(--down)" }}>{fmt(q(m.bondSlashed))} {quote}</b>, link(slashed)]);
+  if (settled) {
+    const d = settled.data;
+    rows.push([`Inventory and unused fees back to ${team}`, <b key="t">{fmt(b(d.toIssuerBase))} {base} + {fmt(q(d.toIssuerQuote))} {quote}</b>, link(settled)]);
+    rows.push([`Paid to ${maker} at settlement`, <b key="m">{fmt(q(d.toMakerQuote))} {quote}</b>, <span key="n" className="xs muted">earned fees + remaining bond</span>]);
+  } else if (status === "Settled") {
+    rows.push([`Fees ${maker} earned over the term`, <b key="f">{fmt(q(m.feesEarned))} {quote}</b>, null]);
+  }
+  return (
+    <div className="card">
+      <div className="card-head"><span className="h3">Settlement</span><span className="xs muted">{status === "Settled" ? "Paid out" : "Waiting for anyone to settle"}</span></div>
+      <div className="card-body" style={{ display: "grid", gap: 12 }}>
+        {rows.length === 0 && <span className="small muted">The maker breached; the position is being unwound before the balances are paid out.</span>}
+        {rows.map(([k, val, l]) => (
+          <div key={k} style={{ display: "grid", gap: 2 }}>
+            <span className="xs muted">{k}</span>
+            <span className="row-between" style={{ gap: 8 }}><span className="num">{val}</span>{l}</span>
+          </div>
+        ))}
       </div>
     </div>
   );

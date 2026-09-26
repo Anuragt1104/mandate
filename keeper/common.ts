@@ -34,8 +34,14 @@ const FALLBACKS =
       ? PUBLIC_FALLBACKS.devnet
       : [];
 
-/** A keyed devnet endpoint from .env (HELIUS_API_KEY) goes first when the target is devnet. */
-const KEYED = process.env.HELIUS_API_KEY && RPC_URL.includes("devnet") ? `https://devnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}` : null;
+/** A keyed endpoint from .env (HELIUS_API_KEY) goes first on devnet and mainnet. */
+const KEYED = !process.env.HELIUS_API_KEY
+  ? null
+  : RPC_URL.includes("devnet")
+    ? `https://devnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}`
+    : RPC_URL.includes("mainnet")
+      ? `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}`
+      : null;
 
 /** A connection that fails over between RPC endpoints per method (see sdk/src/rpc.ts). */
 export function makeConnection(url = RPC_URL): Connection {

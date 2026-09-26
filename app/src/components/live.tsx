@@ -10,11 +10,11 @@ import { SlaBoard } from "./board";
 import { ago } from "./ui";
 
 const SPEC: [string, string][] = [
-  ["Depth", "≥ 500 USDC each side within ±2%"],
-  ["Spread", "≤ 100 bps at size"],
-  ["Checked", "at random, by anyone"],
+  ["Inventory", "in a vault the manager can only quote from"],
+  ["Obligation", "≥ 500 USDC each side within ±2%, spread ≤ 1%"],
+  ["Checked", "at random, by anyone, in public"],
   ["Paid", "per compliant period, from escrow"],
-  ["Remedy", "bond slashed after 3 misses"],
+  ["Remedy", "bond slashed after 3 missed periods"],
 ];
 
 /** The landing hero: the thesis, then the live network it describes. */
@@ -36,18 +36,19 @@ export function NetworkHero() {
               {board && <><span className="sep">/</span>{live.length} live SLA{live.length === 1 ? "" : "s"}</>}
               {lastCheck > 0 && <><span className="sep">/</span>last check {ago(Math.max(0, now - lastCheck))}</>}
             </span>
-            <h1 className="display">Uptime for token markets.</h1>
+            <h1 className="display hero-title">Hire a liquidity manager without handing over your tokens.</h1>
             <p className="lead">
-              Mandate puts a token&apos;s market maker under a liquidity SLA on Solana. Anyone can check the quotes at any moment, every
-              period is scored on-chain, and a maker who stops quoting loses its bond.
+              Mandate turns a market-making agreement into a Solana program. Your inventory sits in a vault the manager can only quote from,
+              the manager posts a bond, and every period is checked in public and settled automatically: paid when the commitment is met,
+              penalised when it isn&apos;t.
             </p>
             <div className="hero-cta">
               <Link className="btn btn-primary btn-lg" href="/app">Open the network <ArrowRight /></Link>
-              <Link className="btn btn-secondary btn-lg" href="/app/create">Draft an SLA</Link>
+              <Link className="btn btn-secondary btn-lg" href="/app/create">Draft an agreement</Link>
             </div>
           </div>
           <div className="hero-side">
-            <span className="eyebrow">An SLA in five lines</span>
+            <span className="eyebrow">An agreement in five lines</span>
             <dl className="dl" style={{ gridTemplateColumns: "84px minmax(0, 1fr)", fontSize: 14 }}>
               {SPEC.map(([k, v]) => (
                 <div key={k} style={{ display: "contents" }}>

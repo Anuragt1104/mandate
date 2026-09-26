@@ -1,28 +1,39 @@
 # Mandate
 
-Liquidity SLAs for token markets: uptime, enforced on Solana.
+Accountable liquidity management on Solana: hire a market maker without handing over your
+tokens.
 
 **Live app (Solana devnet):** https://mandate-lac-rho.vercel.app. The program is deployed on
 devnet, where a simulated test network (a launchpad, token teams, three market makers of
-different quality, traders, an attacker and a watchtower) runs on real contracts around the
-clock. Every SLA gets a public status page: uptime per obligation, incidents, and a live feed
-decoded from the program's own events.
+different quality, traders, an attacker and a watchtower) runs on real contracts. The
+participants are fictional and marked as simulated; it demonstrates the workflow, not
+customer demand.
 
-Token issuers pay market makers to keep their markets liquid, but those contracts are
-private, and nobody can check whether the maker delivered. Mandate turns the contract into a
-Solana program:
+Token teams pay liquidity operators to keep their markets tradeable. Monitoring those
+operators already exists; what doesn't is a way to hand over inventory without handing over
+control, and to settle the agreement without trusting a monthly report. Mandate turns the
+agreement into a Solana program:
 
-- The **issuer** escrows token inventory and a fee budget in vaults owned by the program.
-- A **market maker** accepts the terms and posts a bond.
+- The **team** escrows token and quote inventory and a fee budget in vaults the program owns.
+- An **operator** (usually one the team already works with, or any maker on an open offer)
+  accepts the terms and posts a bond.
 - The inventory can only be used as quotes on the token's **Meteora DLMM** pair: bids at or
-  below a reference price, asks at or above it, inside a band the issuer sets.
-- **Anyone** can check the maker's committed liquidity at any time. Every compliant period
-  pays the maker from the fee budget. Repeated failures slash the bond and end the mandate.
+  below a reference price, asks at or above it, inside a band the team sets.
+- **Anyone** can check the operator's committed liquidity at any time. Every compliant period
+  pays from the fee budget; consecutive failed periods slash the bond and end the agreement,
+  and the inventory returns to the team.
 
-It plugs into **Meteora's Dynamic Bonding Curve**: a launchpad sets its Mandate router as
-the DBC `leftover_receiver`. When a token graduates, its unsold supply is routed into that
-token's mandate vault, so every token from that launchpad graduates with a market maker
-under contract.
+What is enforced is *committed* liquidity near the reference price, valued bin by bin, so
+trading against the book can't fake a pass or force a fail. What a trader can execute at a
+given size moves with every trade; the app shows it next to the enforced measure, but it is not
+the obligation. Both parties see the whole agreement in plain words before signing.
+
+Launchpads can plug in through **Meteora's Dynamic Bonding Curve**: set the Mandate router as
+the DBC `leftover_receiver`, and a graduating token's unsold supply moves into an agreement's
+escrow as inventory instead of into a wallet. That funds the ask side only; the team or
+launchpad still supplies quote tokens and a fee budget, and a maker has to accept.
+
+Next steps and the evidence we still need are in [docs/validation.md](docs/validation.md).
 
 ## Repository layout
 
@@ -216,7 +227,7 @@ calibrated probabilities, no generated text). Rules decide how often each SLA is
 failing agreements are watched closely on a limited budget. Jev judges the breach outlook, the
 maker's intent and ambiguous situations, and each check publishes that read as a memo the
 status page shows. Enforcement never depends on it. On the same budget, breaches are confirmed
-in about 206 s instead of 275-501 s. [docs/sentinel.md](docs/sentinel.md) has the design, the
+in about 206 s instead of 275-501 s in simulation. It is an optional supporting capability; the core is custody and settlement. [docs/sentinel.md](docs/sentinel.md) has the design, the
 evaluation against rules and the benchmarks.
 
 ## Program

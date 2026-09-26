@@ -11,7 +11,7 @@ import { CLUSTER, fetchSimBook, fetchTokenLabels, mintDecimals, type TokenLabel 
 import { pda } from "../../../../../sdk/src";
 import { WalletButton } from "@/components/wallet";
 import { InfoTip, fmtFull } from "@/components/ui";
-import { Schedule } from "@/components/sla";
+import { AgreementSummary, Schedule } from "@/components/sla";
 
 type Form = Record<string, string>;
 
@@ -67,6 +67,8 @@ export default function CreateMandate() {
   const router = useRouter();
   const { run, busy, me } = useMandateActions();
   const [preset, setPreset] = useState("standard");
+  const [mode, setMode] = useState<"designated" | "open">("designated");
+  const [view, setView] = useState<"plain" | "clauses">("plain");
   const [form, setForm] = useState<Form>({ ...MARKET, ...FUNDING, ...PRESETS[0].terms });
   const [labels, setLabels] = useState<Record<string, TokenLabel>>({});
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
@@ -95,7 +97,7 @@ export default function CreateMandate() {
   const errors = useMemo(() => {
     const e: Record<string, string> = {};
     for (const k of ["baseMint", "quoteMint", "lbPair", "referencePool"]) if (!isKey(form[k])) e[k] = "Enter a valid Solana address.";
-    if (form.designatedMaker && !isKey(form.designatedMaker)) e.designatedMaker = "Enter a valid address or leave empty.";
+    if (mode === "designated" && !isKey(form.designatedMaker)) e.designatedMaker = "Enter your operator's wallet address, or open the agreement to any maker.";
     for (const k of ["feePerPeriod", "bond", "minDepth", "quoteDeposit", "feeBudget", "baseDeposit"]) if (!(n(k) >= 0)) e[k] = "Enter a number.";
     if (!(n("periodMinutes") >= 1)) e.periodMinutes = "At least 1 minute.";
     if (!(n("durationPeriods") >= 1)) e.durationPeriods = "At least 1 period.";
@@ -105,7 +107,7 @@ export default function CreateMandate() {
     if (n("liquidityLockSecs") > n("periodMinutes") * 60) e.liquidityLockSecs = "Must not exceed the period length.";
     if (!(n("slashPct") >= 0 && n("slashPct") <= 100)) e.slashPct = "Between 0 and 100.";
     return e;
-  }, [form]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [form, mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const valid = Object.keys(errors).length === 0;
   const maxPayout = n("feePerPeriod") * n("durationPeriods");
@@ -142,7 +144,7 @@ export default function CreateMandate() {
             liquidityLockSecs: n("liquidityLockSecs"), maxConsecutiveFailures: n("maxConsecutiveFailures"), slashBps: Math.round(n("slashPct") * 100),
           },
           baseDeposit: B(form.baseDeposit), quoteDeposit: Q(form.quoteDeposit), feeBudget: Q(form.feeBudget),
-          designatedMaker: form.designatedMaker ? new PublicKey(form.designatedMaker) : undefined,
+          designatedMaker: mode === "designated" && form.designatedMaker ? new PublicKey(form.designatedMaker) : undefined,
         }),
       ];
     }, { done: "SLA funded and posted. It is now open to market makers." });
@@ -161,7 +163,7 @@ export default function CreateMandate() {
       <div className="page-head">
         <div>
           <span className="eyebrow">New agreement</span>
-          <h1 className="h1">Draft an SLA</h1>
+          <h1 className="h1">Draft an agreement</h1>
           <p className="muted" style={{ margin: 0, maxWidth: "66ch" }}>
             Set the service levels, fund the escrow and post it. Any market maker, or the one you name, can accept by posting a bond. Until someone does, you can cancel and recover everything.
           </p>
@@ -179,6 +181,20 @@ export default function CreateMandate() {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="form-section">
+            <div className="form-section-head">
+              <span className="h3">Who manages the liquidity</span>
+              <span className="small muted">Most teams start by putting the operator they already work with under an agreement. An open offer lets any maker take it.</span>
+            </div>
+            <div className="segmented" role="group" aria-label="Who can accept">
+              <button type="button" aria-pressed={mode === "designated"} onClick={() => setMode("designated")}>Your operator</button>
+              <button type="button" aria-pressed={mode === "open"} onClick={() => setMode("open")}>Open to any maker</button>
+            </div>
+            {mode === "designated" && (
+              <Field id="designatedMaker" label="Operator's wallet" mono {...f} error={errors.designatedMaker} hint="Only this wallet can accept, by posting the bond. Share the plain-words agreement with them first." />
+            )}
           </div>
 
           <div className="form-section">
@@ -219,7 +235,7 @@ export default function CreateMandate() {
               <Field id="bond" label="Maker bond" suffix={quoteSym} {...f} error={errors.bond} />
               <Field id="maxConsecutiveFailures" label="Slash after failed periods in a row" {...f} />
               <Field id="slashPct" label="Slash size" suffix="%" {...f} error={errors.slashPct} />
-              <Field id="designatedMaker" label="Designated maker (optional)" mono {...f} error={errors.designatedMaker} hint="Leave empty to let any maker accept." />
+
             </div>
           </div>
 
@@ -238,9 +254,22 @@ export default function CreateMandate() {
             <div className="paper-head">
               <span className="eyebrow">Liquidity service-level agreement</span>
               <span className="paper-title">{baseSym}/{quoteSym}</span>
-              <span className="small muted">Between you, as issuer, and {form.designatedMaker && isKey(form.designatedMaker) ? `maker ${form.designatedMaker.slice(0, 4)}…${form.designatedMaker.slice(-4)}` : "the first maker to accept"}.</span>
+              <span className="small muted">Between you, as issuer, and {mode === "designated" ? (isKey(form.designatedMaker) ? `your operator ${form.designatedMaker.slice(0, 4)}…${form.designatedMaker.slice(-4)}` : "your operator") : "the first maker to accept"}.</span>
+              <div className="segmented" role="group" aria-label="Preview style" style={{ justifySelf: "start", marginTop: 8 }}>
+                <button type="button" aria-pressed={view === "plain"} onClick={() => setView("plain")}>Plain words</button>
+                <button type="button" aria-pressed={view === "clauses"} onClick={() => setView("clauses")}>Clauses</button>
+              </div>
             </div>
-            <Schedule t={previewTerms} quote={quoteSym} decimals={0} compact />
+            {view === "clauses" ? <Schedule t={previewTerms} quote={quoteSym} decimals={0} compact /> : (
+              <AgreementSummary f={{
+                base: baseSym, quote: quoteSym, baseDeposit: n("baseDeposit"), quoteDeposit: n("quoteDeposit"), feeBudget: n("feeBudget"),
+                bond: n("bond"), feePerPeriod: n("feePerPeriod"), periodSecs: n("periodMinutes") * 60, periods: n("durationPeriods") || 0,
+                minDepth: n("minDepth"), windowPct: n("depthWindowBps") / 100, maxSpreadBps: n("maxSpreadBps"), bandPct: n("bandBps") / 100,
+                speedPctPerMin: n("speedPctPerMin"), maxFailures: n("maxConsecutiveFailures"), slashPct: n("slashPct"), lockSecs: n("liquidityLockSecs"),
+                maker: mode === "designated" ? (isKey(form.designatedMaker) ? `Your operator (${form.designatedMaker.slice(0, 4)}…${form.designatedMaker.slice(-4)})` : "Your operator") : null,
+                designated: mode === "designated",
+              }} />
+            )}
             <dl className="dl" style={{ paddingTop: 14, borderTop: "1px solid var(--line)" }}>
               <dt>Maximum payout</dt><dd>{fmtFull(maxPayout)} {quoteSym}</dd>
               <dt>Fee budget covers</dt><dd style={{ color: underfunded ? "var(--warn)" : undefined }}>{isFinite(budgetPeriods) ? `${Math.min(budgetPeriods, n("durationPeriods")).toLocaleString("en-US")} of ${n("durationPeriods").toLocaleString("en-US")} periods` : "all periods"}</dd>
