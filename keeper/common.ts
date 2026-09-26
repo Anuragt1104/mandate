@@ -34,9 +34,13 @@ const FALLBACKS =
       ? PUBLIC_FALLBACKS.devnet
       : [];
 
+/** A keyed devnet endpoint from .env (HELIUS_API_KEY) goes first when the target is devnet. */
+const KEYED = process.env.HELIUS_API_KEY && RPC_URL.includes("devnet") ? `https://devnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}` : null;
+
 /** A connection that fails over between RPC endpoints per method (see sdk/src/rpc.ts). */
 export function makeConnection(url = RPC_URL): Connection {
-  return new Connection(url, { commitment: "confirmed", fetch: failoverFetch([url, ...FALLBACKS], { hedgeMs: 2_500, rounds: 4 }) as any, disableRetryOnRateLimit: true });
+  const endpoints = KEYED && url === RPC_URL ? [KEYED, url, ...FALLBACKS] : [url, ...FALLBACKS];
+  return new Connection(endpoints[0], { commitment: "confirmed", fetch: failoverFetch(endpoints, { hedgeMs: 2_500, rounds: 4 }) as any, disableRetryOnRateLimit: true });
 }
 
 export function loadKeypair(p = process.env.KEYPAIR ?? path.join(os.homedir(), ".config/solana/id.json")): Keypair {

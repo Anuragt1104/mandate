@@ -305,7 +305,7 @@ async function run() {
       const a = d.assessment;
       const outlook = a ? dim(` · sentinel: ${a.diagnosis.replace(/_/g, " ")}, next-check risk ${Math.round(a.risk * 100)}%${isFinite(a.breach) && a.source !== "rules" ? `, breach outlook ${Math.round(a.breach * 100)}%` : ""} (${a.source})`) : "";
       // Checks inside the setup grace (or while catching up on periods) record nothing.
-      if (l.ts.toNumber() === 0 || l.ts.toNumber() === lastCheckTs.get(key)) return say(c.watchtower, dim(`checked ${label(key)} · setup grace, not scored`) + outlook);
+      if (l.ts.toNumber() === 0 || l.ts.toNumber() === lastCheckTs.get(key)) return say(c.watchtower, dim(`checked ${label(key)} · not scored yet (setup window or catching up)`) + outlook);
       lastCheckTs.set(key, l.ts.toNumber());
       const v = (x: any) => Math.round(Number(x) / 1e6).toLocaleString("en-US");
       const detail = `spread ${l.spreadBps === 65535 ? "— (a side is empty)" : `${l.spreadBps} bps`} · bids ${v(l.bidDepthQuote)} · asks ${v(l.askDepthQuote)} USDC`;
@@ -401,6 +401,14 @@ async function run() {
     }
   });
 
+  /** Block trades take at most 60% of the side they hit (as last measured), so they fill. */
+  async function sizeFor(mandate: PublicKey, side: "buy" | "sell", want: number) {
+    const m = await fetchMandate(conn, cl(c.watchtower), mandate).catch(() => null);
+    if (!m || !m.last.ts.toNumber()) return Math.min(want, 500);
+    const depth = Number(side === "buy" ? m.last.askDepthQuote : m.last.bidDepthQuote) / 1e6;
+    return Math.max(50, Math.min(want, depth * 0.6));
+  }
+
   // Traders.
   for (const who of [c.priya, c.marco, c.jun]) {
     every(who, [50, 100], async () => {
@@ -415,14 +423,15 @@ async function run() {
     const live = await liveMarkets();
     if (!live.length) return;
     const mandate = pick(live);
-    const t = await tradeOnce(conn, c.ferro.key, cl(c.ferro), mandate, { quoteSize: rand(1_500, 3_500) });
+    const side = Math.random() < 0.5 ? "buy" : "sell";
+    const t = await tradeOnce(conn, c.ferro.key, cl(c.ferro), mandate, { side, quoteSize: await sizeFor(mandate, side, rand(1_500, 3_500)) });
     say(c.ferro, `${t.buy ? "bought" : "sold"} ${Math.round(t.quoteSize).toLocaleString("en-US")} USDC of ${symbolOf[mandate.toBase58()]} in one block`);
   }, 60);
 
   // Mallory: sandwich a check on Helios's ORBT market.
   const orbt = new PublicKey(s.mandates.orbt);
   every(c.mallory, [300, 420], async () => {
-    const size = rand(1_500, 3_000);
+    const size = await sizeFor(orbt, "buy", rand(1_500, 3_000));
     const r = await sandwichCheck(conn, c.mallory.key, cl(c.mallory), orbt, size);
     say(c.mallory, `bought ${size.toFixed(0)} USDC of ORBT and forced a check in the same transaction (price pushed ${r.movedBins} bins): ${r.passed ? colored(35, "check still passed") : colored(203, "check failed")}; sold back`);
   }, 120);

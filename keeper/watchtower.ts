@@ -200,6 +200,24 @@ export class Watchtower {
       infos.forEach((info, i) => info && this.binSteps.set(missingPairs[i], decodeLbPair(info.data).binStep));
     }
 
+    // Catch up first: after a gap (a sleeping machine, a stalled RPC) an SLA can be hundreds of
+    // periods behind, and each finalize closes at most 32. A check taken while behind records
+    // nothing, so close the backlog in batches before judging anything.
+    for (const x of live) {
+      const period = x.m.terms.periodSecs as number;
+      let lag = Math.min(x.m.terms.durationPeriods, Math.floor((now - x.m.startTs.toNumber()) / period)) - x.m.currentPeriod;
+      for (let round = 0; lag > 1 && round < 4; round++) {
+        const n = Math.min(6, Math.ceil(lag / 32));
+        const ixs = [];
+        for (let k = 0; k < n; k++) ixs.push(await this.client.finalize({ mandate: x.pubkey, m: x.m }));
+        const ok = await sendIxs(this.conn, this.me, ixs).then(() => true, () => false);
+        if (!ok) break;
+        x.m = await fetchMandate(this.conn, this.client, x.pubkey);
+        lag = Math.min(x.m.terms.durationPeriods, Math.floor((now - x.m.startTs.toNumber()) / period)) - x.m.currentPeriod;
+        await this.opts.onEvent?.(x.pubkey.toBase58(), `caught up on missed periods (${Math.max(0, lag)} left)`);
+      }
+    }
+
     // Triage every live SLA with the rules; collect the ones due for a check.
     const due: { key: PublicKey; m: any; w: Watch; o: Observation; risk: number }[] = [];
     for (const [i, { pubkey, m }] of live.entries()) {
