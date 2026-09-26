@@ -145,6 +145,7 @@ export class ModelWorker {
 const MAX_ACTIVITY = 20;
 const MAX_SEEN = 400;
 const MAX_PAGES = 10;
+const FIRST_PAGE = 25;
 const MAX_UNRESOLVED_TRIES = 30;
 
 interface Live {
@@ -218,11 +219,13 @@ export class Watchtower {
     const listed: { signature: string; err: unknown; blockTime?: number | null }[] = [];
     let before: string | undefined;
     let reachedCursor = false;
-    // The first read takes one page (older history is a recorded gap); later reads page back to the cursor.
+    // The first read takes one short page (older history is a recorded gap, which ages out of
+    // the rules' horizon); later reads page back to the cursor.
+    const limit = rec.cursor ? 100 : FIRST_PAGE;
     for (let page = 0; page < (rec.cursor ? MAX_PAGES : 1); page++) {
-      const sigs = await this.conn.getSignaturesForAddress(key, { limit: 100, before, until: rec.cursor }, "confirmed");
+      const sigs = await this.conn.getSignaturesForAddress(key, { limit, before, until: rec.cursor }, "confirmed");
       listed.push(...sigs);
-      if (sigs.length < 100) {
+      if (sigs.length < limit) {
         reachedCursor = true;
         break;
       }

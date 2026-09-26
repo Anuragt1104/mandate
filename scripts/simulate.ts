@@ -313,18 +313,72 @@ async function run() {
       say(c.watchtower, `checked ${label(key)}  ${l.ok ? colored(35, "PASS") : colored(203, "FAIL")}  ${dim(detail)}${outlook}`);
     },
   });
-  every(c.watchtower, [4, 7], () => watchtower.tick());
+  // The watchtower runs beside the other participants, never blocking them; one tick at a time.
+  let ticking = false;
+  every(c.watchtower, [4, 7], async () => {
+    if (ticking) return;
+    ticking = true;
+    watchtower
+      .tick()
+      .catch((e: any) => say(c.watchtower, dim(`skipped: ${e.message?.split("\n")[0] ?? e}`)))
+      .finally(() => (ticking = false));
+  });
 
-  // Helios: the diligent maker, on ORBT (and the earlier MAND demo on devnet).
-  const heliosMandates = [s.mandates.orbt, s.mandates.mand].filter(Boolean).map((a) => new PublicKey(a));
+  // Helios: the diligent maker, on ORBT (and the earlier MAND demo on devnet). Re-centring
+  // takes several steps (withdraw, open, deploy); a diligent maker does them back to back.
+  const heliosMandates = () => [s.mandates.orbt, s.mandates.mand].filter(Boolean).map((a) => new PublicKey(a));
   every(c.helios, [30, 45], async () => {
-    for (const mandate of heliosMandates) {
-      const did = await makerTick(conn, c.helios.key, cl(c.helios), mandate);
-      if (did) say(c.helios, `${did} · ${label(mandate.toBase58())}`);
+    for (const mandate of heliosMandates()) {
+      for (let step = 0; step < 4; step++) {
+        const did = await makerTick(conn, c.helios.key, cl(c.helios), mandate, { autoAccept: true });
+        if (!did) break;
+        say(c.helios, `${did} · ${label(mandate.toBase58())}`);
+      }
+    }
+  });
+
+  // Standing agreements renew: when ORBT's or KITE's agreement has ended and been settled,
+  // its issuer puts the same operator back under a fresh, fully funded agreement (a
+  // designated offer, as a team with an existing operator would).
+  const standing = [
+    { slot: "orbt", issuer: c.nova, maker: c.helios, market: "orbt", terms: () => slaTerms() },
+    { slot: "kite2", issuer: c.kite, maker: c.tidewater, market: "kite", terms: () => slaTerms({ fee: 0.75, bond: 400, depth: 400 }) },
+  ] as const;
+  const endedAt: Record<string, number> = {};
+  every(c.nova, [30, 45], async () => {
+    for (const st of standing) {
+      const current = s.mandates[st.slot];
+      if (!current) continue;
+      const m = await fetchMandate(conn, cl(st.issuer), new PublicKey(current));
+      if (!["Settled", "Cancelled"].includes(statusName(m.status))) continue;
+      endedAt[st.slot] ??= now();
+      if (now() - endedAt[st.slot] < RETENDER) continue;
+      const mk = s.markets[st.market];
+      const baseMint = new PublicKey(mk.mint);
+      const quote = new PublicKey(s.quoteMint!);
+      let id = 2;
+      while (await conn.getAccountInfo(pda.mandate(st.issuer.key.publicKey, baseMint, id))) id++;
+      const mandate = pda.mandate(st.issuer.key.publicKey, baseMint, id);
+      const treasury = await conn.getTokenAccountBalance(getAssociatedTokenAddressSync(baseMint, st.issuer.key.publicKey)).then((b) => BigInt(b.value.amount));
+      const terms = st.terms();
+      await sendIxs(conn, st.issuer.key, [
+        await cl(st.issuer).createMandate({
+          issuer: st.issuer.key.publicKey, baseMint, quoteMint: quote, lbPair: new PublicKey(mk.lbPair), referencePool: new PublicKey(mk.dammPool), id, terms,
+          baseDeposit: new BN((treasury / 4n).toString()), quoteDeposit: USDC(3_000), feeBudget: terms.feePerPeriod.muln(terms.durationPeriods),
+          designatedMaker: st.maker.key.publicKey,
+        }),
+      ]);
+      s.mandates[st.slot] = mandate.toBase58();
+      symbolOf[mandate.toBase58()] = mk.symbol;
+      delete endedAt[st.slot];
+      saveState(s);
+      writePersonas(c, s);
+      banner(`${st.issuer.name} renews its ${mk.symbol} agreement with ${st.maker.name}`);
+      say(st.issuer, `posted a fully funded ${mk.symbol} agreement designated to ${st.maker.name} · ${label(mandate.toBase58())}`);
     }
   });
   every(c.helios, [540, 720], async () => {
-    for (const mandate of heliosMandates) {
+    for (const mandate of heliosMandates()) {
       const m = await fetchMandate(conn, cl(c.helios), mandate);
       const owed = Number(m.feesEarned) - Number(m.feesClaimed);
       if (owed < 1e6 || !(m.maker as PublicKey).equals(c.helios.key.publicKey)) continue;
