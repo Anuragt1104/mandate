@@ -66,3 +66,14 @@ export async function copyText(text: string): Promise<boolean> {
     return false;
   }
 }
+
+/** The draft a draft link carries, or null if it isn't one. */
+export async function docFromLink(link: string): Promise<DraftDoc | null> {
+  const m = link.match(/[#&]d=([A-Za-z0-9_-]+)/);
+  if (!m) return null;
+  try {
+    return await unpackLink<DraftDoc>(m[1]);
+  } catch {
+    return null;
+  }
+}

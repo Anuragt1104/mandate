@@ -8,6 +8,7 @@ import { CLUSTER } from "@/lib/chain";
 import { Wordmark } from "./brand";
 import { WalletButton } from "./wallet";
 import { ThemeToggle } from "./theme";
+import { useAccount } from "./account";
 
 interface NavItem {
   href: string;
@@ -45,6 +46,28 @@ function Group({ title, items, path }: { title?: string; items: NavItem[]; path:
   );
 }
 
+/** Where work is kept: the open workspace, or this browser when there's no account. */
+function WorkspaceBlock() {
+  const acct = useAccount();
+  if (!acct.enabled || acct.loading || !acct.user) {
+    return (
+      <div className="side-context">
+        <span className="side-title">Workspace</span>
+        <span className="small" style={{ fontWeight: 600 }}>This browser</span>
+        <span className="xs muted">Solana {CLUSTER} · drafts and observations stay here</span>
+        {acct.enabled && !acct.loading && <Link className="xs link" href="/app/account">Sign in to share with your team</Link>}
+      </div>
+    );
+  }
+  return (
+    <Link className="side-context side-context-link" href="/app/workspace">
+      <span className="side-title">Workspace</span>
+      <span className="small" style={{ fontWeight: 600 }}>{acct.current?.name ?? "Create a workspace"}</span>
+      <span className="xs muted">{acct.current ? `${acct.current.role} · Solana ${CLUSTER}` : "to keep and share your work"}</span>
+    </Link>
+  );
+}
+
 /** Sidebar, top bar with the network and the signing wallet, and the page. */
 export function AppShell({ children }: { children: ReactNode }) {
   const path = usePathname();
@@ -57,11 +80,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Link href="/app" aria-label="Mandate overview"><Wordmark /></Link>
           <button className="icon-btn side-close" onClick={() => setOpen(false)} aria-label="Close menu"><X /></button>
         </div>
-        <div className="side-context">
-          <span className="side-title">Workspace</span>
-          <span className="small" style={{ fontWeight: 600 }}>This browser</span>
-          <span className="xs muted">Solana {CLUSTER} · no account yet: drafts and observations stay here</span>
-        </div>
+        <WorkspaceBlock />
         <Group items={PRIMARY} path={path} />
         <Group title="For operators" items={OPERATORS} path={path} />
         <Group title="Explore" items={EXPLORE} path={path} />

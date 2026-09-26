@@ -7,7 +7,7 @@ import { ArrowRight, FilePen, Radar, Wrench } from "lucide-react";
 import { usePoll, useNow } from "@/lib/hooks";
 import { loadBoard } from "@/lib/loaders";
 import { usePersonas } from "@/lib/personas";
-import { listDrafts, listSessions, type DraftEntry, type SessionEntry } from "@/lib/local";
+import { listDrafts, listSessions, useLocalVersion, type DraftEntry, type SessionEntry } from "@/lib/local";
 import { CLUSTER } from "@/lib/chain";
 import { SlaBoard } from "@/components/board";
 import { Freshness } from "@/components/state";
@@ -28,10 +28,11 @@ export default function Overview() {
   const board = boardPoll.data;
   const [sessions, setSessions] = useState<SessionEntry[]>([]);
   const [drafts, setDrafts] = useState<DraftEntry[]>([]);
+  const version = useLocalVersion();
   useEffect(() => {
     setSessions(listSessions().slice(0, 4));
     setDrafts(listDrafts().slice(0, 4));
-  }, []);
+  }, [version]);
   const me = publicKey?.toBase58();
   const mine = board?.rows.filter((r) => me && (r.m.issuer.toBase58() === me || r.m.maker.toBase58() === me)) ?? [];
 
@@ -112,7 +113,7 @@ export default function Overview() {
         <div className="card">
           <div className="card-head"><span className="h3">Reports and drafts</span><Link className="xs link" href="/app/reports">All reports</Link></div>
           <div className="card-body" style={{ display: "grid", gap: 10 }}>
-            {sessions.length + drafts.length === 0 && <span className="small muted">Nothing yet in this browser. Observations and drafts you start or open appear here.</span>}
+            {sessions.length + drafts.length === 0 && <span className="small muted">Nothing here yet. Observations and drafts you start or open appear here.</span>}
             {sessions.map((s) => (
               <Link key={s.id} className="row-between small" href={`/app/monitor?s=${s.id}`}><span><Radar style={{ width: 13, verticalAlign: -2 }} /> {s.label}</span><span className="xs muted">{s.samples} samples · {ago(Math.max(0, now - s.updatedAt))}</span></Link>
             ))}

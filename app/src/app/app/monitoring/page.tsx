@@ -5,18 +5,19 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Activity, FileUp, Radar } from "lucide-react";
 import type { Session } from "../../../../../sdk/src/observe";
-import { listSessions, saveSession, type SessionEntry } from "@/lib/local";
+import { listSessions, saveSession, useLocalVersion, type SessionEntry } from "@/lib/local";
 import { ago, shortAddr } from "@/components/ui";
 import { useNow } from "@/lib/hooks";
 
-/** Observations of existing arrangements kept in this browser, and importing the CLI verifier's files. */
+/** Observations of existing arrangements kept in the open workspace (or this browser), and importing the CLI verifier's files. */
 export default function Monitoring() {
   const router = useRouter();
   const now = useNow(30_000);
   const [sessions, setSessions] = useState<SessionEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
-  useEffect(() => setSessions(listSessions()), []);
+  const version = useLocalVersion();
+  useEffect(() => setSessions(listSessions()), [version]);
 
   async function importFile(f: File) {
     setError(null);

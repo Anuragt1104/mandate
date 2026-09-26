@@ -80,7 +80,7 @@ export function Feasibility({ market, options }: { market: DraftMarket; options:
   const bidValue = Number(t.quoteDeposit) || 0;
 
   const cantConclude: string[] = [];
-  if (!session) cantConclude.push("How this operator performs on this pool: there's no observation of it in this browser. Start one from Monitor, or import a verifier file.");
+  if (!session) cantConclude.push("How this operator performs on this pool: there's no observation of it here yet. Start one from Monitor, or import a verifier file.");
   else {
     const r = evaluate(session, evalTerms(main.terms)).readiness;
     if (!r.ready) cantConclude.push(`Whether the replay is representative: ${r.needs.join(" ")}`);

@@ -7,6 +7,7 @@ import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
 import { UnsafeBurnerWalletAdapter } from "@solana/wallet-adapter-unsafe-burner";
 import { CircleAlert, CircleCheck, X } from "lucide-react";
 import { CLUSTER, RPC_URL, rpcFetch } from "@/lib/chain";
+import { AccountProvider } from "./account";
 import "@solana/wallet-adapter-react-ui/styles.css";
 
 if (typeof window !== "undefined") (window as any).Buffer = (window as any).Buffer ?? Buffer;
@@ -29,7 +30,7 @@ export function Providers({ children }: { children: ReactNode }) {
       <WalletProvider wallets={wallets} autoConnect>
         <WalletModalProvider>
           <ToastCtx.Provider value={show}>
-            {children}
+            <AccountProvider>{children}</AccountProvider>
             {toast && (
               <div className={`toast ${toast.kind}`} role={toast.kind === "error" ? "alert" : "status"}>
                 {toast.kind === "error" ? <CircleAlert /> : <CircleCheck />}
