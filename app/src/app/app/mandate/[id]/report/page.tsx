@@ -203,7 +203,9 @@ function Report({ v, h, successors }: { v: MandateView; h: History | null; succe
               {startBase !== null && startQuote !== null
                 ? row("At the start", <>{fmt(startBase, 0)} {base} + {fmt(startQuote, 0)} {quote}</>, startPrice ? `≈ ${fmt(startBase * startPrice + startQuote, 0)} ${quote} at the first check's reference` : undefined)
                 : row("At the start", h ? "not available" : "loading…", h && !h.complete ? "the history is too long to read back to the start" : undefined)}
-              {row(ended ? "Returned to the team" : "Now", <>{fmt(endBase, 0)} {base} + {fmt(endQuote, 0)} {quote}</>, `≈ ${fmt(endBase * endPrice + endQuote, 0)} ${quote} at the ${ended ? "last" : "current"} reference`)}
+              {status === "Settled" && !h?.settled
+                ? row("Returned to the team", h ? "not available" : "loading…")
+                : row(ended ? (status === "Settled" ? "Returned to the team" : "In the vaults, to return") : "Now", <>{fmt(endBase, 0)} {base} + {fmt(endQuote, 0)} {quote}</>, `≈ ${fmt(endBase * endPrice + endQuote, 0)} ${quote} at the ${ended ? "last" : "current"} reference`)}
               <span className="xs muted">Valued at the agreement&apos;s reference price at each point, which a thin pool may not realise. Fees and penalties are excluded; trading fees the position earned stay in the inventory.{h?.settled && <> <a className="link" href={explorerUrl(h.settled.sig)} target="_blank" rel="noreferrer">Settlement transaction</a>.</>}</span>
             </div>
           </div>
@@ -214,7 +216,9 @@ function Report({ v, h, successors }: { v: MandateView; h: History | null; succe
               <div className="card-body" style={{ display: "grid", gap: 10 }}>
                 {row("Assets", status === "Settled" ? "returned" : "waiting for settlement", status === "Settled" ? "inventory and unused fees to the team" : "anyone can unwind and settle")}
                 {next ? row("Next agreement", <Link className="link" href={`/app/mandate/${next.pubkey.toBase58()}`}>{shortAddr(next.pubkey, 4)}</Link>, `with ${nameOf(book, next.m.maker, "an operator")}`) : row("Next agreement", "none yet")}
-                {gapSecs !== null && row(next ? "Gap without an agreement" : "Unmanaged for", duration(gapSecs), next ? "between this one stopping and the next one scoring" : "and counting")}
+                {gapSecs !== null && (next && stoppedAt && next.m.startTs.toNumber() <= stoppedAt
+                  ? row("Gap without an agreement", "none", "another agreement on this pool was already running")
+                  : row(next ? "Gap without an agreement" : "Unmanaged for", duration(gapSecs), next ? "between this one stopping and the next one scoring" : "and counting"))}
               </div>
             </div>
           )}
@@ -230,7 +234,7 @@ function Report({ v, h, successors }: { v: MandateView; h: History | null; succe
                     <b className="small">{p.title}</b>
                     <span className="xs muted">{p.why}</span>
                     {p.change && <span className="xs">{Object.entries(p.change).map(([k, val]) => `${k}: ${(current as any)[k]} → ${val}`).join(" · ")}</span>}
-                    {!p.change && <span className="xs muted">Agree this outside the terms.</span>}
+                    {!p.change && p.id === "monitoring" && <span className="xs muted">Agree this outside the terms.</span>}
                   </span>
                 </label>
               ))}
