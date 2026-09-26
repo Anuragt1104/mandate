@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useMemo, useState } from "react";
+import { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { BN } from "@coral-xyz/anchor";
 import { PublicKey } from "@solana/web3.js";
@@ -20,7 +20,7 @@ import { LiquidityChart, LiquidityLegend } from "@/components/charts";
 import { ActivityFeed } from "@/components/feed";
 import { AgreementSummary, tokenRisks, ExecutionPanel, Grade, IncidentList, ObligationRows, Party, SentinelCard, SlaBanner, Schedule, StatusChip, TickLegend, judgeName, nameOf, type AgreementFacts } from "@/components/sla";
 import { DIAGNOSIS_LABELS } from "../../../../../../sdk/src/sentinel";
-import { WalletButton } from "@/components/wallet";
+import { Freshness } from "@/components/state";
 import { Address, InfoTip, Skeleton, StatusIcon, TokenPair, ago, countdown, duration, fmt, fmtFull, fmtPrice, shortAddr } from "@/components/ui";
 import { StrategyType, binArrayIndex, dlmmInitBinArrayIx } from "../../../../../../sdk/src";
 
@@ -52,11 +52,12 @@ function NotFound({ text }: { text: string }) {
 
 function SlaDetail({ mandateKey }: { mandateKey: PublicKey }) {
   const id = mandateKey.toBase58();
-  const { data, error, reload } = usePoll(async () => (await loadMandate(mandateKey)) ?? ("missing" as const), [id], 10_000);
+  const { data, error, reload, updatedAt, since } = usePoll(async () => (await loadMandate(mandateKey)) ?? ("missing" as const), [id], 10_000);
   const now = useNow();
   if (data === null && !error) {
     return (
       <div className="stack">
+        {now * 1000 - since > 12_000 && <div className="notice small">Still loading: the network is slow right now. <button className="btn btn-ghost btn-sm" onClick={() => reload()}>Retry</button></div>}
         <Skeleton w={120} h={14} />
         <Skeleton w={320} h={40} />
         <Skeleton h={84} />
@@ -67,10 +68,46 @@ function SlaDetail({ mandateKey }: { mandateKey: PublicKey }) {
   }
   if (data === "missing") return <NotFound text="No SLA exists at this address on this cluster." />;
   if (!data) return <NotFound text={`Could not load it: ${error}`} />;
-  return <Detail v={data} now={now} reload={reload} error={error} />;
+  return <Detail v={data} now={now} reload={reload} error={error} updatedAt={updatedAt} />;
 }
 
-function Detail({ v, now, reload, error }: { v: MandateView; now: number; reload: () => void; error: string | null }) {
+type Tab = "overview" | "terms" | "liquidity" | "activity" | "reports";
+const TABS: [Tab, string][] = [["overview", "Overview"], ["terms", "Terms"], ["liquidity", "Liquidity"], ["activity", "Activity"], ["reports", "Reports"]];
+
+/** Tabs that follow the URL fragment, so a tab can be linked and survives reloads. */
+function useTab(): [Tab, (t: Tab) => void] {
+  const [tab, set] = useState<Tab>("overview");
+  useEffect(() => {
+    const read = () => {
+      const h = window.location.hash.slice(1) as Tab;
+      set(TABS.some(([k]) => k === h) ? h : "overview");
+    };
+    read();
+    window.addEventListener("hashchange", read);
+    return () => window.removeEventListener("hashchange", read);
+  }, []);
+  const choose = (t: Tab) => {
+    set(t);
+    window.history.replaceState(null, "", t === "overview" ? window.location.pathname : `#${t}`);
+  };
+  return [tab, choose];
+}
+
+function Tabs({ tab, onTab, status }: { tab: Tab; onTab: (t: Tab) => void; status: string }) {
+  return (
+    <div className="tabs" role="tablist" aria-label="Agreement sections">
+      {TABS.map(([k, label]) => (
+        <button key={k} role="tab" aria-selected={tab === k} onClick={() => onTab(k)}>
+          {label}
+          {k === "reports" && ["Breached", "Expired", "Settled"].includes(status) && <span className="tab-dot" aria-label="closing report available" />}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Detail({ v, now, reload, error, updatedAt }: { v: MandateView; now: number; reload: () => void; error: string | null; updatedAt: number | null }) {
+  const [tab, setTab] = useTab();
   const book = usePersonas();
   const { key, m, status, entries, labels, profile } = v;
   const chart = v.book;
@@ -136,6 +173,8 @@ function Detail({ v, now, reload, error }: { v: MandateView; now: number; reload
     ? { ...s, detail: `${s.detail} Watchtower read: ${DIAGNOSIS_LABELS[read.diagnosis].toLowerCase()}${isFinite(read.breach) && read.source !== "rules" ? `, breach outlook ${Math.round(read.breach * 100)}%` : ""}.` }
     : s;
 
+  const checked = entries.filter((e) => e.status !== 3).length;
+  const met = entries.filter((e) => e.status === 1).length;
   return (
     <>
       <Link className="crumb" href="/app/agreements"><ArrowLeft />Agreements</Link>
@@ -148,23 +187,26 @@ function Detail({ v, now, reload, error }: { v: MandateView; now: number; reload
           </div>
           <div className="sla-parties">
             <span>Issuer <Party address={m.issuer} book={book} /></span>
-            <span>Maker {openToAll ? <b style={{ color: "var(--ink)" }}>open to any maker</b> : <><Party address={m.maker} book={book} />{profile && <Grade r={rating(profile)} />}</>}</span>
+            <span>Operator {openToAll ? <b style={{ color: "var(--ink)" }}>open to any maker</b> : <><Party address={m.maker} book={book} />{profile && <span className="row" style={{ gap: 6 }} title="The operator's record across every agreement it has taken, not this agreement's current state"><span className="xs muted">record</span><Grade r={rating(profile)} /></span>}</>}</span>
             <span className="venue">Venue · Meteora DLMM</span>
             {status === "Active" && <span className="mono xs">Period {(clockPeriod + 1).toLocaleString("en-US")} of {t.durationPeriods.toLocaleString("en-US")}</span>}
           </div>
         </div>
         <div className="row wrap" style={{ gap: 8, alignItems: "center" }}>
-          {error && <span className="xs muted">Showing the last loaded data. {error}</span>}
+          {error ? <span className="xs muted">Showing data from {updatedAt ? ago(Math.max(0, Math.round((now * 1000 - updatedAt) / 1000))) : "earlier"}; the latest refresh failed.</span> : <Freshness updatedAt={updatedAt} now={now} />}
           {status !== "Open" && status !== "Cancelled" && (
             <Link className="btn btn-secondary btn-sm" href={`/app/mandate/${key.toBase58()}/report`}>{["Breached", "Expired", "Settled"].includes(status) ? "Closing report and handover" : "Renewal report"}</Link>
           )}
         </div>
       </div>
 
-      <SlaBanner s={banner} stat={status === "Open" ? { value: `${fmtFull(q(t.feePerPeriod))} ${quote}`, label: `per compliant ${duration(t.periodSecs)}` } : { value: pct(up), label: `uptime · ${entries.filter((e) => e.status !== 3).length} checked periods` }} />
+      <SlaBanner s={banner} stat={status === "Open" ? { value: `${fmtFull(q(t.feePerPeriod))} ${quote}`, label: `per compliant ${duration(t.periodSecs)}` } : { value: checked ? `${met} of ${checked}` : "—", label: `checked periods met in this agreement${entries.length > checked ? ` · ${entries.length - checked} not checked` : ""}` }} />
 
-      {status === "Open" && plainWords}
+      <Tabs tab={tab} onTab={setTab} status={status} />
 
+      {tab === "overview" && (
+        <>
+          {status === "Open" && plainWords}
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-head">
           <span className="h3">Service levels <InfoTip>Each tick is one scoring period. A period pays the maker only if it was checked and every check passed.</InfoTip></span>
@@ -181,7 +223,52 @@ function Detail({ v, now, reload, error }: { v: MandateView; now: number; reload
         )}
       </div>
 
-      <div className="grid-main">
+          <div className="grid-main">
+            <div className="stack">
+              <ActionsCard v={v} now={now} reload={reload} periodEnd={periodEnd} book={book} />
+              <LatestCheck v={v} now={now} reload={reload} quote={quote} q={q} />
+            </div>
+            <div className="stack">
+              {status !== "Open" && <SentinelCard shown={shown} now={now} />}
+              <div className="card">
+                <div className="card-head"><span className="h3">Escrow</span><span className="xs muted">Held by the program</span></div>
+                <div className="card-body"><Escrow v={v} bd={bd} qd={qd} base={base} quote={quote} clockPeriod={clockPeriod} /></div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {tab === "terms" && (
+        <>
+          {plainWords}
+      <div className="contract" style={{ marginTop: status === "Open" ? 16 : 0 }}>
+        <div className="contract-col">
+          <div className="row-between"><span className="h3">The agreement</span><span className="xs muted">Fixed when it was created</span></div>
+          <Schedule t={t} quote={quote} decimals={qd} />
+        </div>
+        <div className="contract-col">
+          <span className="h3">Parties and accounts</span>
+          <dl className="dl">
+            <dt>Issuer</dt><dd><Party address={m.issuer} book={book} /></dd>
+            <dt>Maker</dt><dd>{openToAll ? <span className="muted">not yet accepted</span> : <Party address={m.maker} book={book} />}</dd>
+            <dt>SLA account</dt><dd><Address value={key} /></dd>
+            <dt>DLMM pair</dt><dd><Address value={m.lbPair} /></dd>
+            <dt>Oracle</dt><dd><Address value={m.oracle} /></dd>
+            <dt>Graduated pool</dt><dd><Address value={m.referencePool} /></dd>
+            <dt>Position</dt><dd>{(m.position as PublicKey).equals(PublicKey.default) ? <span className="muted">none open</span> : <Address value={m.position} />}</dd>
+            <dt>Base vault</dt><dd><Address value={m.baseVault} /></dd>
+            <dt>Quote vault</dt><dd><Address value={m.quoteVault} /></dd>
+          </dl>
+          <p className="xs muted" style={{ margin: 0 }}>
+            The vaults are owned by the SLA account. Inventory can only move into this SLA&apos;s own DLMM position and back, and settlement pays fixed recipients.
+          </p>
+        </div>
+      </div>
+        </>
+      )}
+
+      {tab === "liquidity" && (
         <div className="stack">
           <div className="card">
             <div className="card-head">
@@ -243,6 +330,11 @@ function Detail({ v, now, reload, error }: { v: MandateView; now: number; reload
             </div>
           </div>
 
+        </div>
+      )}
+
+      {tab === "activity" && (
+        <div className="stack">
           <div className="card">
             <div className="card-head">
               <span className="h3">Incidents</span>
@@ -261,46 +353,24 @@ function Detail({ v, now, reload, error }: { v: MandateView; now: number; reload
             </div>
           </div>
         </div>
+      )}
 
-        <div className="stack">
-          {status !== "Open" && <SentinelCard shown={shown} now={now} />}
-          <LatestCheck v={v} now={now} reload={reload} quote={quote} q={q} />
-          <ActionsCard v={v} now={now} reload={reload} periodEnd={periodEnd} book={book} />
-          {(status === "Settled" || status === "Breached") && <SettlementReceipt v={v} events={events} base={base} quote={quote} bd={bd} qd={qd} book={book} />}
-          <div className="card">
-            <div className="card-head"><span className="h3">Escrow</span><span className="xs muted">Held by the program</span></div>
-            <div className="card-body">
-              <Escrow v={v} bd={bd} qd={qd} base={base} quote={quote} clockPeriod={clockPeriod} />
+      {tab === "reports" && (
+        <div className="grid-main">
+          <div className="stack">
+            <div className="card card-pad" style={{ display: "grid", gap: 10 }}>
+              <span className="h3">{["Breached", "Expired", "Settled"].includes(status) ? "Closing report and handover" : "Renewal report"}</span>
+              <span className="small muted">Was the service worth paying for? Periods, fees paid, unused budget and penalties kept apart, incidents and recovery, inventory at the start and now, and proposed changes for the next term.</span>
+              {status === "Open" || status === "Cancelled"
+                ? <span className="small muted">Available once an operator has accepted.</span>
+                : <Link className="btn btn-primary btn-sm" style={{ justifySelf: "start" }} href={`/app/mandate/${key.toBase58()}/report`}>Open the report</Link>}
             </div>
           </div>
+          <div className="stack">
+            {(status === "Settled" || status === "Breached") && <SettlementReceipt v={v} events={events} base={base} quote={quote} bd={bd} qd={qd} book={book} />}
+          </div>
         </div>
-      </div>
-
-      {status !== "Open" && <div style={{ marginTop: 16 }}>{plainWords}</div>}
-
-      <div className="contract" style={{ marginTop: status === "Open" ? 16 : 0 }}>
-        <div className="contract-col">
-          <div className="row-between"><span className="h3">The agreement</span><span className="xs muted">Fixed when it was created</span></div>
-          <Schedule t={t} quote={quote} decimals={qd} />
-        </div>
-        <div className="contract-col">
-          <span className="h3">Parties and accounts</span>
-          <dl className="dl">
-            <dt>Issuer</dt><dd><Party address={m.issuer} book={book} /></dd>
-            <dt>Maker</dt><dd>{openToAll ? <span className="muted">not yet accepted</span> : <Party address={m.maker} book={book} />}</dd>
-            <dt>SLA account</dt><dd><Address value={key} /></dd>
-            <dt>DLMM pair</dt><dd><Address value={m.lbPair} /></dd>
-            <dt>Oracle</dt><dd><Address value={m.oracle} /></dd>
-            <dt>Graduated pool</dt><dd><Address value={m.referencePool} /></dd>
-            <dt>Position</dt><dd>{(m.position as PublicKey).equals(PublicKey.default) ? <span className="muted">none open</span> : <Address value={m.position} />}</dd>
-            <dt>Base vault</dt><dd><Address value={m.baseVault} /></dd>
-            <dt>Quote vault</dt><dd><Address value={m.quoteVault} /></dd>
-          </dl>
-          <p className="xs muted" style={{ margin: 0 }}>
-            The vaults are owned by the SLA account. Inventory can only move into this SLA&apos;s own DLMM position and back, and settlement pays fixed recipients.
-          </p>
-        </div>
-      </div>
+      )}
     </>
   );
 }
@@ -381,7 +451,7 @@ function CheckRow({ name, pass, value, target, fill }: { name: string; pass: boo
 function SnapshotButton({ v, reload }: { v: MandateView; reload: () => void }) {
   const { run, busy, me } = useMandateActions();
   const active = v.status === "Active";
-  if (!me) return <WalletButton />;
+  if (!me) return <span className="xs muted">Anyone can run a check. Connect a signing wallet (top right) to pay its network fee.</span>;
   return (
     <button className="btn btn-secondary btn-block" disabled={!active || !!busy}
       onClick={() => run("Check", async (c, me, fm) => [await c.snapshot({ cranker: me, mandate: v.key, m: fm ?? v.m })], { done: "Check recorded on-chain.", mandate: v.key }).then(() => setTimeout(reload, 500))}>
@@ -465,14 +535,19 @@ function ActionsCard({ v, now, reload, periodEnd, book }: { v: MandateView; now:
   return (
     <div className="card">
       <div className="card-head">
-        <span className="h3">Manage</span>
-        {me && <span className="tag">{role === "observer" ? <><Eye />Observer</> : role === "issuer" ? "You are the issuer" : "You are the maker"}</span>}
+        <span className="h3">Next action</span>
+        {me && <span className="tag">{role === "observer" ? <><Eye />Observer</> : role === "issuer" ? "You are the issuer" : "You are the operator"}</span>}
       </div>
       <div className="card-body" style={{ display: "grid", gap: 12 }}>
         {!me && (
           <>
-            <p className="small muted" style={{ margin: 0 }}>Connect a wallet to accept this SLA, manage its liquidity or settle it. Checking and settlement are open to everyone.</p>
-            <WalletButton />
+            <p className="small muted" style={{ margin: 0 }}>
+              {status === "Open"
+                ? openToAll ? "Any operator can accept this offer by posting the bond." : <>Accepting needs the designated operator&apos;s wallet, <span className="mono">{shortAddr(m.maker, 4)}</span>.</>
+                : status === "Active" ? <>Managing liquidity needs the operator&apos;s wallet, <span className="mono">{shortAddr(m.maker, 4)}</span>. Checks and closing out periods are open to anyone.</>
+                : "Unwinding and settlement are open to anyone."}
+              {" "}Connect a signing wallet (top right) to act.
+            </p>
           </>
         )}
         {me && status === "Open" && isIssuer && (
@@ -493,7 +568,15 @@ function ActionsCard({ v, now, reload, periodEnd, book }: { v: MandateView; now:
             )}
           </>
         )}
-        {me && status === "Open" && !isIssuer && !openToAll && !isMaker && <p className="small muted" style={{ margin: 0 }}>This offer is reserved for {nameOf(book, m.maker, "a designated maker")}.</p>}
+        {me && status === "Open" && !isIssuer && !openToAll && !isMaker && (
+          <div className="notice small" style={{ display: "grid", gap: 4 }}>
+            <span>This offer is reserved for {nameOf(book, m.maker, "a designated operator")}. Switch to that wallet in the top bar to accept.</span>
+            <span className="xs muted">Needed: <span className="mono">{shortAddr(m.maker, 6)}</span> · connected: <span className="mono">{shortAddr(me, 6)}</span></span>
+          </div>
+        )}
+        {me && status === "Active" && !isMaker && !isIssuer && (
+          <span className="xs muted">Managing liquidity needs the operator&apos;s wallet (<span className="mono">{shortAddr(m.maker, 4)}</span>); you&apos;re connected as <span className="mono">{shortAddr(me, 4)}</span>.</span>
+        )}
         {me && status === "Active" && isMaker && !hasPosition && (
           <>
             <p className="small muted" style={{ margin: 0 }}>Open the SLA&apos;s DLMM position around the reference price, then place the vault&apos;s inventory in it.</p>

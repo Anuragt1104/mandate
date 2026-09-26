@@ -266,7 +266,7 @@ function Live({ initial }: { initial: Session }) {
 
   return (
     <>
-      <Link className="crumb" href="/app/reports"><ArrowLeft />Reports</Link>
+      <Link className="crumb" href="/app/monitoring"><ArrowLeft />Monitoring</Link>
       <div className="page-head">
         <div style={{ minWidth: 0 }}>
           <span className="eyebrow">Observing · {s.cluster} · read-only</span>

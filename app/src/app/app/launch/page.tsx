@@ -22,7 +22,6 @@ import { useMandateActions, describeError } from "@/lib/actions";
 import { useToast } from "@/components/Providers";
 import { CLUSTER, explorerUrl, fetchSimBook } from "@/lib/chain";
 import { pda } from "../../../../../sdk/src";
-import { WalletButton } from "@/components/wallet";
 import { Address, InfoTip } from "@/components/ui";
 
 function Step({ n, state, title, children }: { n: number; state: "done" | "current" | "todo"; title: string; children: React.ReactNode }) {
@@ -162,7 +161,7 @@ export default function Launch() {
             <div className="row wrap">
               {publicKey ? (
                 <button className="btn btn-primary" disabled={b || !quoteMint} onClick={setUpLaunchpad}>{working === "Create Mandated config" || busy === "Create router" ? "Working…" : routerExists ? "Create Mandated config" : "Create router and Mandated config"}</button>
-              ) : <WalletButton />}
+              ) : <span className="small muted">Connect a signing wallet (top right) to fund it.</span>}
               {router && <span className="small muted row" style={{ gap: 6 }}>Router <Address value={router} /></span>}
             </div>
             {config && <span className="small row" style={{ gap: 6 }}>Config <Address value={config} /></span>}

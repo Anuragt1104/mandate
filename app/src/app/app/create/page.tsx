@@ -9,7 +9,6 @@ import { CircleAlert } from "lucide-react";
 import { useMandateActions } from "@/lib/actions";
 import { CLUSTER, fetchMints, fetchSimBook, fetchTokenLabels, mintDecimals, type MintInfo, type TokenLabel } from "@/lib/chain";
 import { pda } from "../../../../../sdk/src";
-import { WalletButton } from "@/components/wallet";
 import { InfoTip, fmtFull } from "@/components/ui";
 import { AgreementSummary, Schedule } from "@/components/sla";
 
@@ -291,7 +290,7 @@ export default function CreateMandate() {
             {underfunded && <div className="notice warn"><CircleAlert />The fee budget runs out after {budgetPeriods.toLocaleString("en-US")} periods. The program only lets a maker accept once it covers the whole term.</div>}
             {me ? (
               <button className="btn btn-primary btn-lg btn-block" type="submit" disabled={!!busy || !valid}>{busy ? "Posting…" : "Fund and post the SLA"}</button>
-            ) : <WalletButton />}
+            ) : <span className="small muted">Connect a signing wallet (top right) to fund it.</span>}
             <span className="xs muted" style={{ textAlign: "center" }}>{valid ? "One transaction. Funds move into the SLA's escrow." : "Fix the highlighted fields to continue."}</span>
           </div>
         </div>

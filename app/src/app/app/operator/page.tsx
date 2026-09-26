@@ -17,7 +17,6 @@ import { buildAction, simulate, type ActionKind, type ProposedAction, type Simul
 import { useMandateActions } from "@/lib/actions";
 import { usePersonas, type PersonaBook } from "@/lib/personas";
 import { judgeName, nameOf } from "@/components/sla";
-import { WalletButton } from "@/components/wallet";
 import { Skeleton, ago, countdown, fmt, shortAddr } from "@/components/ui";
 
 export default function OperatorPage() {
@@ -181,7 +180,6 @@ function Queue() {
             Your agreements, most urgent first: what needs attention, what changed since the last passing check, and a proposed action you can simulate before approving it in your wallet.
           </p>
         </div>
-        <WalletButton size="sm" />
       </div>
       {!operator && (
         <div className="card card-pad" style={{ display: "grid", gap: 10 }}>

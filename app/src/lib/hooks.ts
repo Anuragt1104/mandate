@@ -11,7 +11,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
  */
 export function usePoll<T>(load: () => Promise<T>, deps: unknown[], intervalMs = 10_000) {
   const identity = JSON.stringify(deps);
-  const [state, setState] = useState<{ id: string; data: T | null; error: string | null }>({ id: identity, data: null, error: null });
+  const [state, setState] = useState<{ id: string; data: T | null; error: string | null; updatedAt: number | null }>({ id: identity, data: null, error: null, updatedAt: null });
+  const [since] = useState(() => Date.now());
   const loadRef = useRef(load);
   loadRef.current = load;
   const generation = useRef(0);
@@ -19,7 +20,7 @@ export function usePoll<T>(load: () => Promise<T>, deps: unknown[], intervalMs =
   const failures = useRef(0);
 
   // A new resource starts empty (without waiting for an effect, so no frame shows old data).
-  const current = state.id === identity ? state : { id: identity, data: null, error: null };
+  const current = state.id === identity ? state : { id: identity, data: null, error: null, updatedAt: null };
 
   const reload = useCallback(async () => {
     const gen = generation.current;
@@ -28,14 +29,14 @@ export function usePoll<T>(load: () => Promise<T>, deps: unknown[], intervalMs =
     try {
       const data = await loadRef.current();
       if (gen !== generation.current) return; // answered for deps that no longer apply
-      setState({ id: identity, data, error: null });
+      setState({ id: identity, data, error: null, updatedAt: Date.now() });
       failures.current = 0;
     } catch (e: any) {
       if (gen !== generation.current) return;
       failures.current += 1;
       const msg = e?.message ?? String(e);
       const error = /429|Too many requests|rate limit/i.test(msg) ? "The RPC endpoint is rate-limiting requests; retrying shortly." : msg;
-      setState((s) => (s.id === identity ? { ...s, error } : { id: identity, data: null, error }));
+      setState((s) => (s.id === identity ? { ...s, error } : { id: identity, data: null, error, updatedAt: null }));
     } finally {
       if (inFlight.current === gen) inFlight.current = null;
     }
@@ -67,7 +68,8 @@ export function usePoll<T>(load: () => Promise<T>, deps: unknown[], intervalMs =
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [reload, intervalMs]);
-  return { data: current.data, error: current.error, reload };
+  /** updatedAt: when the shown data was loaded (ms); since: when this resource started loading. */
+  return { data: current.data, error: current.error, updatedAt: current.updatedAt, since, reload };
 }
 
 export function useNow(intervalMs = 1000) {

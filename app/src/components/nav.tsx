@@ -80,19 +80,18 @@ export function MarketingNav() {
       <div className="container topbar-inner">
         <Link href="/" aria-label="Mandate home"><Wordmark /></Link>
         <nav className={`nav ${open ? "open" : ""}`} aria-label="Main" onClick={() => setOpen(false)}>
-          <Link href="/app/monitor">Monitor</Link>
-          <a href="/#contract">The agreement</a>
-          <a href="/#incidents">Attacks it survives</a>
-          <Link href="/app/makers">Makers</Link>
-          <Link href="/research">Research</Link>
+          <a href="/#product">Product</a>
+          <a href="/#operators">For operators</a>
+          <a href="/#security">Security</a>
+          <Link href="/app/agreements">Demo</Link>
         </nav>
         <div className="topbar-right">
           <a className="btn btn-ghost btn-sm hide-sm" href={REPO_URL} target="_blank" rel="noreferrer" aria-label="Source on GitHub">
             <GithubMark />
             Source
           </a>
-          <Link className="btn btn-primary btn-sm" href="/app">
-            Open the app
+          <Link className="btn btn-primary btn-sm" href="/app/monitor">
+            Start monitoring
             <ArrowRight />
           </Link>
           <button className="icon-btn menu-toggle" onClick={() => setOpen((o) => !o)} aria-label="Menu" aria-expanded={open} style={{ width: 32, height: 32 }}>

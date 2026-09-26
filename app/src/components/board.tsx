@@ -58,14 +58,14 @@ export function SlaBoard({ board, book, now, cells = 48, limit, foot = true, tit
             <span className="b-pair"><TokenPair base={m.baseMint} quote={m.quoteMint} labels={board.labels} size={26}
               sub={<>Issued by {nameOf(book, m.issuer, "an issuer")}</>} /></span>
             <span className="who row" style={{ gap: 8, minWidth: 0 }}>
-              {open ? <span className="small muted">Open to any maker</span> : <><Party address={m.maker} book={book} link={false} />{profile && <Grade r={rating(profile)} />}</>}
+              {open ? <span className="small muted">Open to any operator</span> : <><Party address={m.maker} book={book} link={false} />{profile && <span className="row" style={{ gap: 4 }} title="Operator's record across all its agreements (not this agreement)"><span className="xs faint">record</span><Grade r={rating(profile)} /></span>}</>}
             </span>
             <div className="track">
               {r.status === "Open"
                 ? <span className="small muted">Waiting for a maker{qd !== undefined && <> · {Number(m.terms.feePerPeriod) / 10 ** qd} {quote} per compliant period · {Number(m.terms.bondAmount) / 10 ** qd} {quote} bond</>}</span>
                 : <Ticks ticks={boardTicks(m, r.status, r.entries, cells)} label="Recent periods" />}
             </div>
-            <span className="uptime" title="Share of checked periods that met every obligation">{r.status === "Open" ? "" : pct(up)}</span>
+            <span className="uptime" title="This agreement: share of checked periods (in the program's recent log) that met every obligation; unchecked periods excluded">{r.status === "Open" ? "" : pct(up)}</span>
             <span className="state"><StatusChip tone={s.tone} word={s.word} /></span>
           </Link>
         );

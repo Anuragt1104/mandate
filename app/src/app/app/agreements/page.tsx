@@ -41,9 +41,9 @@ export default function Agreements() {
       </div>
 
       <div className="kpis">
-        <Kpi label="Live SLAs" value={k(sum?.active)} sub={sum ? `${sum.open} open to makers` : undefined} />
-        <Kpi label="Network uptime" value={k(sum?.compliance === null ? "—" : `${((sum?.compliance ?? 0) * 100).toFixed(1)}%`)} sub={sum ? `${(sum.ok + sum.failed).toLocaleString("en-US")} periods scored` : undefined}
-          info="Share of checked periods, across every SLA, in which every obligation was met." />
+        <Kpi label="Live agreements" value={k(sum?.active)} sub={sum ? `${sum.open} open to makers` : undefined} />
+        <Kpi label="Checked periods met" value={k(sum?.compliance === null ? "—" : `${((sum?.compliance ?? 0) * 100).toFixed(1)}%`)} sub={sum ? `of ${(sum.ok + sum.failed).toLocaleString("en-US")} checked, all agreements` : undefined}
+          info="Across every agreement on this network: periods in which every check passed, divided by periods that were checked at all. Unchecked periods are left out, so read it next to coverage on each agreement." />
         <Kpi label="Bonds at stake" value={k(fmt(main?.bonded ?? 0, 0))} sub={main ? `${unit}, posted by makers` : "nothing posted yet"} />
         <Kpi label="Earned by makers" value={k(fmt(main?.fees ?? 0))} sub={main ? `${unit}, for compliant periods` : undefined} />
         <Kpi label="Slashed" value={k(fmt(main?.slashed ?? 0, 0))} sub={main && main.slashed > 0 ? `${unit}, after breaches` : "no breaches yet"} />

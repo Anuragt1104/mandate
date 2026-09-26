@@ -30,7 +30,6 @@ import { rememberDraft } from "@/lib/local";
 import { useMandateActions } from "@/lib/actions";
 import { usePersonas } from "@/lib/personas";
 import { Feasibility, type Option } from "@/components/feasibility";
-import { WalletButton } from "@/components/wallet";
 import { Address, InfoTip, ago, shortAddr } from "@/components/ui";
 import { useNow } from "@/lib/hooks";
 
@@ -179,7 +178,6 @@ function Draft({ initial, basis }: { initial: DraftDoc; basis: string | null }) 
         </div>
         <div className="row wrap" style={{ gap: 8 }}>
           <button className="btn btn-secondary" onClick={share}><Copy />Copy link to send</button>
-          <WalletButton size="sm" />
         </div>
       </div>
       {msg && <div className={`notice ${msg.kind === "warn" ? "warn" : ""} small`} style={{ marginBottom: 16, wordBreak: "break-all" }}>{msg.text}</div>}
@@ -341,7 +339,7 @@ function Approvals({ doc, state, role, me, edited, canSign, onApprove, onDoc, on
         {who(state.operator, "Operator", doc.operator)}
         {state.stale.length > 0 && <span className="xs muted">{state.stale.length} earlier approval{state.stale.length === 1 ? "" : "s"} on other versions or wallets kept for the record; they don&apos;t count.</span>}
         <span className="xs muted">Approving signs the terms hash with your wallet. It moves no funds and costs nothing; it proves both sides agreed to identical terms.</span>
-        {!me && <WalletButton />}
+        {!me && <span className="small muted">Reading and proposing need no wallet. To approve, connect the team&apos;s or the operator&apos;s signing wallet (top right).</span>}
         {me && !role && <span className="small muted">Connect the team&apos;s or the operator&apos;s wallet to approve.</span>}
         {me && role && !mine && (
           <button className="btn btn-primary" onClick={onApprove} disabled={edited || !canSign || !doc.team || !doc.operator}>

@@ -40,7 +40,7 @@ export function WalletButton({ size = "md" }: { size?: "sm" | "md" }) {
     return (
       <button className={`${cls} btn-ink`} onClick={() => setVisible(true)} disabled={connecting}>
         <Wallet />
-        {connecting ? "Connecting…" : "Connect wallet"}
+        {connecting ? "Connecting…" : "Connect signing wallet"}
       </button>
     );
   }
@@ -84,6 +84,7 @@ export function WalletButton({ size = "md" }: { size?: "sm" | "md" }) {
               </div>
             </div>
           </div>
+          <div className="note" style={{ marginTop: 0 }}>Your signing wallet approves terms and signs transactions. It isn&apos;t an account: drafts and observations you create stay in this browser.</div>
           <button role="menuitem" onClick={copy}><Copy />{copied ? "Copied" : "Copy address"}</button>
           <a role="menuitem" href={explorerAddress(address)} target="_blank" rel="noreferrer"><ExternalLink />View on Solana Explorer</a>
           {CLUSTER !== "mainnet" && (

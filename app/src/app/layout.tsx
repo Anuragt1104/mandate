@@ -27,7 +27,11 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${chivo.variable} ${chivoMono.variable}`}>
+    <html lang="en" className={`${chivo.variable} ${chivoMono.variable}`} suppressHydrationWarning>
+      <head>
+        {/* Apply a saved Light/Dark choice before paint; "System" leaves it to the OS. */}
+        <script dangerouslySetInnerHTML={{ __html: `try{var t=localStorage.getItem("mandate.theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}` }} />
+      </head>
       <body>
         <Providers>{children}</Providers>
       </body>
