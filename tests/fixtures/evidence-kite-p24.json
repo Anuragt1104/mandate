@@ -1,0 +1,181 @@
+{
+  "kind": "mandate-evidence",
+  "v": 1,
+  "cluster": "devnet",
+  "program": "3YetFVe4F6MuYaHH7pAmTCZjtMnunQT1ufMdAY8rYFrn",
+  "mandate": "GTsckyDvEemCjCbQhCDTTuheDt8dMz58iP76oEMjh8GU",
+  "issuer": "GGKuqNbytRTpnVHqCtQkYY5JZUk4PFbSKK9XUeggUNR7",
+  "maker": "A7kx6b3JyDsB3TWKETbbh12faZ2inqdV1G25F16qe8yt",
+  "quoteMint": "4qF4Q5Gj9R2k8Wyx9yspNRmj3APKFBQ4oTdGvhJE3Z4x",
+  "quoteDecimals": 6,
+  "period": 23,
+  "startTs": 1790426190,
+  "terms": {
+    "feePerPeriod": "750000",
+    "periodSecs": 60,
+    "durationPeriods": 10080,
+    "bondAmount": "400000000",
+    "maxSpreadBps": 100,
+    "minDepthQuote": "400000000",
+    "depthWindowBps": 200,
+    "bandBps": 500,
+    "maxConsecutiveFailures": 3,
+    "slashBps": 5000
+  },
+  "checks": [
+    {
+      "sig": "4tLwUjNujzYwk9q2ciGaiobxotXUN9SGtZdmGr1aZvRXnpdgYrBpnoKiJHWrn7qLqYQKbW8pz535geq1NnfCzzyx",
+      "slot": 504415557,
+      "blockTime": 1790427578,
+      "period": 23,
+      "ok": false,
+      "spreadBps": 10,
+      "bidDepthQuote": "330000001",
+      "askDepthQuote": "15105178021",
+      "activeId": -9213,
+      "anchorBin": -9214,
+      "cranker": "9wk1RenPCaCc8WvqpWLJgwPfL1bivCSFMQs8i1DnSWUY"
+    },
+    {
+      "sig": "3Gq4pdHAEKj4FhyhjoQL7BzUz1udeCLW2NWgSigPh4oNAz8AaSmjVKBeiwaNuSMstLzAK556SyLZJhLgmHf3NDYr",
+      "slot": 504415628,
+      "blockTime": 1790427595,
+      "period": 23,
+      "ok": false,
+      "spreadBps": 10,
+      "bidDepthQuote": "330000001",
+      "askDepthQuote": "15105178021",
+      "activeId": -9213,
+      "anchorBin": -9214,
+      "cranker": "9wk1RenPCaCc8WvqpWLJgwPfL1bivCSFMQs8i1DnSWUY"
+    },
+    {
+      "sig": "5L55E2czy1Yhvwvcf2WfBksejBdjVMCmrD6i15WmWzzmAtdiGxS3FtQAAbsVWAnUvgiq1Tpu2WYMS11sAf1kACG2",
+      "slot": 504415729,
+      "blockTime": 1790427618,
+      "period": 23,
+      "ok": false,
+      "spreadBps": 10,
+      "bidDepthQuote": "330000001",
+      "askDepthQuote": "15105178021",
+      "activeId": -9213,
+      "anchorBin": -9214,
+      "cranker": "9wk1RenPCaCc8WvqpWLJgwPfL1bivCSFMQs8i1DnSWUY"
+    }
+  ],
+  "finalized": {
+    "sig": "vAZg2XChRgh6AcdggHSrY36hxzWwi9K4JtmXB3H874ahqguPudW7mWPX2rXFUTa3rMc8PBPVfCjtrTDczAYiwpG",
+    "slot": 504415782,
+    "blockTime": 1790427630,
+    "status": 2,
+    "snapshots": 3,
+    "feeAccrued": "0"
+  },
+  "previous": [
+    {
+      "period": 0,
+      "status": 1
+    },
+    {
+      "period": 1,
+      "status": 1
+    },
+    {
+      "period": 2,
+      "status": 1
+    },
+    {
+      "period": 3,
+      "status": 1
+    },
+    {
+      "period": 4,
+      "status": 1
+    },
+    {
+      "period": 5,
+      "status": 1
+    },
+    {
+      "period": 6,
+      "status": 1
+    },
+    {
+      "period": 7,
+      "status": 1
+    },
+    {
+      "period": 8,
+      "status": 1
+    },
+    {
+      "period": 9,
+      "status": 1
+    },
+    {
+      "period": 10,
+      "status": 1
+    },
+    {
+      "period": 11,
+      "status": 1
+    },
+    {
+      "period": 12,
+      "status": 1
+    },
+    {
+      "period": 13,
+      "status": 1
+    },
+    {
+      "period": 14,
+      "status": 1
+    },
+    {
+      "period": 15,
+      "status": 1
+    },
+    {
+      "period": 16,
+      "status": 1
+    },
+    {
+      "period": 17,
+      "status": 1
+    },
+    {
+      "period": 18,
+      "status": 1
+    },
+    {
+      "period": 19,
+      "status": 1
+    },
+    {
+      "period": 20,
+      "status": 1
+    },
+    {
+      "period": 21,
+      "status": 2
+    },
+    {
+      "period": 22,
+      "status": 2
+    }
+  ],
+  "slash": {
+    "sig": "vAZg2XChRgh6AcdggHSrY36hxzWwi9K4JtmXB3H874ahqguPudW7mWPX2rXFUTa3rMc8PBPVfCjtrTDczAYiwpG",
+    "amount": "200000000",
+    "consecutiveFailed": 3
+  },
+  "payout": null,
+  "search": {
+    "signaturesScanned": 90,
+    "transactionsRead": 5,
+    "reachedPeriodStart": true
+  },
+  "generatedAt": 1790463519,
+  "source": "devnet.helius-rpc.com"
+}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { PublicKey } from "@solana/web3.js";
 import { CircleCheck, CircleDashed, OctagonX, TriangleAlert, Flag, Radar } from "lucide-react";
 import type { Incident, Obligation, Rating, SlaStatus, Tick, Tone } from "@/lib/sla";
@@ -49,8 +50,9 @@ export function SlaBanner({ s, stat }: { s: SlaStatus; stat?: { value: string; l
 
 // ---------------------------------------------------------------- ticks
 
-/** One mark per scored period. Hovering shows what that period recorded. */
-export function Ticks({ ticks, size = "md", label }: { ticks: Tick[]; size?: "sm" | "md" | "lg"; label?: string }) {
+/** One mark per scored period. Hovering shows what that period recorded; with `hrefFor`, clicking opens its explanation. */
+export function Ticks({ ticks, size = "md", label, hrefFor }: { ticks: Tick[]; size?: "sm" | "md" | "lg"; label?: string; hrefFor?: (period: number) => string }) {
+  const router = useRouter();
   const ref = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<{ i: number; x: number } | null>(null);
   const interactive = size !== "sm";
@@ -68,7 +70,9 @@ export function Ticks({ ticks, size = "md", label }: { ticks: Tick[]; size?: "sm
   return (
     <div className="ticks-wrap" style={{ position: "relative", minWidth: 0 }}>
       <div ref={ref} className={`ticks ${size}`} role="img" aria-label={`${label ? `${label}: ` : ""}${up} met, ${down} missed, ${idle} not checked`}
-        onMouseMove={interactive ? onMove : undefined} onMouseLeave={() => setHover(null)}>
+        onMouseMove={interactive ? onMove : undefined} onMouseLeave={() => setHover(null)}
+        onClick={hrefFor && interactive ? () => { const p = hover ? ticks[hover.i]?.period : undefined; if (p !== undefined) router.push(hrefFor(p)); } : undefined}
+        style={hrefFor && h?.period !== undefined ? { cursor: "pointer" } : undefined}>
         {ticks.map((t, i) => (
           <span key={i} className={`tick ${t.kind === "live-bad" ? "live bad" : t.kind}`} data-tip={hover?.i === i ? "" : undefined} />
         ))}
@@ -77,6 +81,7 @@ export function Ticks({ ticks, size = "md", label }: { ticks: Tick[]; size?: "sm
         <div className="hovercard" style={{ left: Math.min(Math.max(hover.x, 90), (ref.current?.clientWidth ?? 200) - 90), top: 0 }}>
           <b>{h.label}</b>
           {h.lines.map((l) => <div key={l} className="hc-dim">{l}</div>)}
+          {hrefFor && h.period !== undefined && <div className="hc-dim" style={{ marginTop: 4 }}>Click to see why</div>}
         </div>
       )}
     </div>
@@ -96,7 +101,7 @@ export function TickLegend() {
 
 // ---------------------------------------------------------------- obligations
 
-export function ObligationRows({ rows }: { rows: Obligation[] }) {
+export function ObligationRows({ rows, hrefFor }: { rows: Obligation[]; hrefFor?: (period: number) => string }) {
   return (
     <div>
       {rows.map((o) => {
@@ -107,7 +112,7 @@ export function ObligationRows({ rows }: { rows: Obligation[] }) {
               <b>{o.name}</b>
               <span className="xs muted">{o.target}</span>
             </div>
-            <Ticks ticks={o.ticks} label={o.name} />
+            <Ticks ticks={o.ticks} label={o.name} hrefFor={hrefFor} />
             <span className="pct" style={{ color: r !== null && r < 0.95 ? "var(--down)" : undefined }}>{r === null ? "—" : `${(r * 100).toFixed(r === 1 ? 0 : 1)}%`}</span>
             <div className="now">
               <b style={{ color: o.now.pass === false ? "var(--down)" : undefined }}>{o.now.text}</b>
@@ -122,7 +127,7 @@ export function ObligationRows({ rows }: { rows: Obligation[] }) {
 
 // ---------------------------------------------------------------- incidents
 
-export function IncidentList({ items, periodSecs, makerName, slashed, quote, causes = {} }: { items: Incident[]; periodSecs: number; makerName: string; slashed: string; quote: string; causes?: Record<number, string> }) {
+export function IncidentList({ items, periodSecs, makerName, slashed, quote, causes = {}, hrefFor }: { items: Incident[]; periodSecs: number; makerName: string; slashed: string; quote: string; causes?: Record<number, string>; hrefFor?: (period: number) => string }) {
   if (!items.length) {
     return (
       <div className="empty-state" style={{ padding: "28px 18px" }}>
@@ -146,6 +151,7 @@ export function IncidentList({ items, periodSecs, makerName, slashed, quote, cau
               {i.startTs ? ` · from ${new Date(i.startTs * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}
             </p>
             {causes[i.from] && <p style={{ marginTop: 3 }}>Watchtower read: <b style={{ color: "var(--ink-2)" }}>{causes[i.from]}</b></p>}
+            {hrefFor && <p style={{ marginTop: 3 }}><a className="link" href={hrefFor(i.to)}>{i.breach ? "Why the bond was slashed" : `Why period ${i.to + 1} wasn't paid`}</a></p>}
           </div>
         </div>
       ))}

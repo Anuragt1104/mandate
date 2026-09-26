@@ -120,6 +120,7 @@ function Detail({ v, now, reload, error, updatedAt }: { v: MandateView; now: num
   const openToAll = (m.maker as PublicKey).equals(PublicKey.default);
   const makerName = openToAll ? "The maker" : nameOf(book, m.maker, "The maker");
   const s = slaStatus(m, status, now, { maker: makerName, quote, decimals: qd }, ago);
+  const explainHref = (p: number) => `/app/mandate/${key.toBase58()}/period/${p + 1}`;
   const obl = useMemo(() => obligations(m, status, entries, 60, quote, (x) => fmt(x), qd), [m, status, entries, quote, qd]);
   const incs = useMemo(() => incidents(m, status, entries), [m, status, entries]);
   const up = uptime(entries);
@@ -214,10 +215,10 @@ function Detail({ v, now, reload, error, updatedAt }: { v: MandateView; now: num
         </div>
         {status === "Open" ? (
           <div className="card-body"><div className="notice info">Scoring starts the moment a market maker accepts and posts its bond. From then on, every {duration(t.periodSecs)} period is scored here, obligation by obligation.</div></div>
-        ) : <ObligationRows rows={obl.rows} />}
+        ) : <ObligationRows rows={obl.rows} hrefFor={explainHref} />}
         {status === "Active" && (
           <div className="card-foot row-between wrap">
-            <span className="xs muted">Last 60 periods. Hover a tick for its record.</span>
+            <span className="xs muted">Last 60 periods. Click a tick to see why it was paid or not.</span>
             <span className="xs muted num">Period {clockPeriod + 1} closes in {countdown(clockPeriodEnd - now)}</span>
           </div>
         )}
@@ -340,7 +341,7 @@ function Detail({ v, now, reload, error, updatedAt }: { v: MandateView; now: num
               <span className="h3">Incidents</span>
               <span className="xs muted">{incs.length ? `${incs.length} in the last ${entries.length} periods` : `last ${entries.length} periods`}</span>
             </div>
-            <IncidentList items={incs} periodSecs={t.periodSecs} makerName={makerName} slashed={fmt(q(m.bondSlashed))} quote={quote} causes={causes} />
+            <IncidentList items={incs} periodSecs={t.periodSecs} makerName={makerName} slashed={fmt(q(m.bondSlashed))} quote={quote} causes={causes} hrefFor={explainHref} />
           </div>
 
           <div className="card">

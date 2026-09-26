@@ -1,0 +1,78 @@
+{
+  "kind": "mandate-evidence",
+  "v": 1,
+  "cluster": "devnet",
+  "program": "3YetFVe4F6MuYaHH7pAmTCZjtMnunQT1ufMdAY8rYFrn",
+  "mandate": "GTsckyDvEemCjCbQhCDTTuheDt8dMz58iP76oEMjh8GU",
+  "issuer": "GGKuqNbytRTpnVHqCtQkYY5JZUk4PFbSKK9XUeggUNR7",
+  "maker": "A7kx6b3JyDsB3TWKETbbh12faZ2inqdV1G25F16qe8yt",
+  "quoteMint": "4qF4Q5Gj9R2k8Wyx9yspNRmj3APKFBQ4oTdGvhJE3Z4x",
+  "quoteDecimals": 6,
+  "period": 0,
+  "startTs": 1790426190,
+  "terms": {
+    "feePerPeriod": "750000",
+    "periodSecs": 60,
+    "durationPeriods": 10080,
+    "bondAmount": "400000000",
+    "maxSpreadBps": 100,
+    "minDepthQuote": "400000000",
+    "depthWindowBps": 200,
+    "bandBps": 500,
+    "maxConsecutiveFailures": 3,
+    "slashBps": 5000
+  },
+  "checks": [
+    {
+      "sig": "YeVZiFfsqGKMoHMhR1ba5w1kUZ61H7BiD2dz2Xv8UEjVj3j7Nwn12reJZyMHgyCJAeX36hR2eteNLX4WdxpDMCB",
+      "slot": 504409591,
+      "blockTime": 1790426201,
+      "period": 0,
+      "ok": true,
+      "spreadBps": 10,
+      "bidDepthQuote": "2970000000",
+      "askDepthQuote": "12465178010",
+      "activeId": -9205,
+      "anchorBin": -9206,
+      "cranker": "9wk1RenPCaCc8WvqpWLJgwPfL1bivCSFMQs8i1DnSWUY"
+    },
+    {
+      "sig": "3kvzEsExJMsXoS6Xum8JC5kESs2XCocLJ1zJ3zSBn3xEup6QUc7CTTHcN67YXduh3MingnrxETRGoViiADhvUtNN",
+      "slot": 504409729,
+      "blockTime": 1790426232,
+      "period": 0,
+      "ok": true,
+      "spreadBps": 10,
+      "bidDepthQuote": "2970000000",
+      "askDepthQuote": "12465178010",
+      "activeId": -9205,
+      "anchorBin": -9206,
+      "cranker": "9wk1RenPCaCc8WvqpWLJgwPfL1bivCSFMQs8i1DnSWUY"
+    }
+  ],
+  "finalized": {
+    "sig": "EWU3Y1LkCJ8KiCdDu3XsDJwjgUeH2P37QJXY2RnbAPS6hanERuSBLYg6HtH5k9xGWvnJQxTgKGK31a5J1vhsVd5",
+    "slot": 504409818,
+    "blockTime": 1790426253,
+    "status": 1,
+    "snapshots": 2,
+    "feeAccrued": "750000"
+  },
+  "previous": [],
+  "slash": null,
+  "payout": {
+    "kind": "settlement",
+    "sig": "55Vm9kFcf2nkfcoj5kUQsg35YUrwLmeoxf5htBxE3uRQEwU2EBmg7UMndcK9699J49vhtqVmBDQQfKs1CaQKDBsq",
+    "slot": 504415834,
+    "blockTime": 1790427642,
+    "amount": "215750000",
+    "first": true
+  },
+  "search": {
+    "signaturesScanned": 90,
+    "transactionsRead": 85,
+    "reachedPeriodStart": true
+  },
+  "generatedAt": 1790463516,
+  "source": "devnet.helius-rpc.com"
+}

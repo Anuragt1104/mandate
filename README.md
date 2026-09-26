@@ -58,7 +58,13 @@ The app is organised around a team that already pays an operator and is coming u
    proposed changes tied to the evidence. "Renew with these changes" starts a new draft; live
    terms never change. When an agreement ends badly, the closing report records the handover:
    returned assets, the gap until the next agreement, and an invitation to a new operator.
-5. **Operators get a work queue**: what needs attention, what changed since the last passing
+5. **Why was this operator paid?** Any period opens a page that walks from the agreed terms
+   to every check taken in it, the rule, the fee or failure (and any slash), and the
+   transaction that paid it, recomputed in the browser. The evidence downloads as a bundle that
+   `scripts/explain.ts` recomputes offline and re-checks against any RPC, with what is
+   recomputed, what is only on chain, and what is trusted kept apart. See
+   [docs/evidence.md](docs/evidence.md).
+6. **Operators get a work queue**: what needs attention, what changed since the last passing
    check, and a proposed action to simulate and approve, ranked with the watchtower's read.
 
 Next steps and the evidence we still need are in [docs/validation.md](docs/validation.md).

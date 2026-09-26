@@ -110,6 +110,8 @@ export interface Tick {
   kind: TickKind;
   label: string;
   lines: string[];
+  /** The scored period this tick shows (absent for future and in-progress cells). */
+  period?: number;
 }
 
 export interface Obligation {
@@ -136,8 +138,8 @@ export function obligations(m: any, status: StatusName, entries: PeriodEntry[], 
   const make = (key: Obligation["key"], name: string, target: string, ok: (e: PeriodEntry) => boolean, describe: (e: PeriodEntry) => string, liveOk: () => boolean, nowText: () => string, nowPass: () => boolean): Obligation => {
     const ticks: Tick[] = shown.map((e) =>
       e.status === 3
-        ? { kind: "idle", label: `${periodLabel(e.period)} · not checked`, lines: ["Nobody checked this period, so it is neither paid nor failed."] }
-        : { kind: ok(e) ? "up" : "down", label: `${periodLabel(e.period)} · ${ok(e) ? "met" : "missed"}`, lines: [describe(e), `${e.snapshots} check${e.snapshots === 1 ? "" : "s"}`] },
+        ? { kind: "idle", period: e.period, label: `${periodLabel(e.period)} · not checked`, lines: ["Nobody checked this period, so it is neither paid nor failed."] }
+        : { kind: ok(e) ? "up" : "down", period: e.period, label: `${periodLabel(e.period)} · ${ok(e) ? "met" : "missed"}`, lines: [describe(e), `${e.snapshots} check${e.snapshots === 1 ? "" : "s"}`] },
     );
     if (live) ticks.push({ kind: liveOk() ? "live" : "live-bad", label: `${periodLabel(m.currentPeriod)} · in progress`, lines: [`${m.curSnapshots} check${m.curSnapshots === 1 ? "" : "s"} so far`] });
     while (ticks.length < cells) ticks.unshift({ kind: "future", label: "", lines: [] });
@@ -163,6 +165,7 @@ export function obligations(m: any, status: StatusName, entries: PeriodEntry[], 
   ];
   const overall: Tick[] = shown.map((e) => ({
     kind: e.status === 1 ? "up" : e.status === 2 ? "down" : "idle",
+    period: e.period,
     label: `${periodLabel(e.period)} · ${e.status === 1 ? "compliant" : e.status === 2 ? "failed" : "not checked"}`,
     lines: e.status === 3 ? ["Neither paid nor failed."] : [`${e.snapshots} check${e.snapshots === 1 ? "" : "s"}`],
   }));
@@ -175,6 +178,7 @@ export function boardTicks(m: any, status: StatusName, entries: PeriodEntry[], c
   const shown = entries.slice(-(cells - 1));
   const ticks: Tick[] = shown.map((e) => ({
     kind: e.status === 1 ? "up" : e.status === 2 ? "down" : "idle",
+    period: e.period,
     label: `Period ${e.period + 1} · ${e.status === 1 ? "compliant" : e.status === 2 ? "failed" : "not checked"}`,
     lines: [],
   }));
