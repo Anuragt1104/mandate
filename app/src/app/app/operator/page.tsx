@@ -136,12 +136,17 @@ function Queue() {
     const board = await loadBoard();
     const mine = board.rows.filter((r) => r.m.maker.toBase58() === operator && ["Open", "Active", "Breached", "Expired"].includes(r.status));
     const out: Item[] = [];
+    // One agreement at a time and a short event window each: the queue must stay light on RPC.
     for (const r of mine) {
-      const v = await loadMandate(r.pubkey);
-      if (!v) continue;
-      const events = await loadFeed(r.pubkey, 30).catch(() => [] as FeedEvent[]);
-      const quote = v.labels[v.m.quoteMint.toBase58()]?.symbol ?? "quote";
-      out.push(assess(v, events, latestRead(events, r.pubkey.toBase58(), trusted, Math.floor(Date.now() / 1000)), Math.floor(Date.now() / 1000), quote));
+      try {
+        const v = await loadMandate(r.pubkey);
+        if (!v) continue;
+        const events = await loadFeed(r.pubkey, 12).catch(() => [] as FeedEvent[]);
+        const quote = v.labels[v.m.quoteMint.toBase58()]?.symbol ?? "quote";
+        out.push(assess(v, events, latestRead(events, r.pubkey.toBase58(), trusted, Math.floor(Date.now() / 1000)), Math.floor(Date.now() / 1000), quote));
+      } catch {
+        /* skipped this round; it is retried on the next poll */
+      }
     }
     // The watchtower's read decides the order among equals: its breach outlook is the tie-breaker.
     const outlook = (i: Item) => (i.read?.standing === "trusted" && Number.isFinite(i.read.v.read.breach) ? i.read.v.read.breach : 0);

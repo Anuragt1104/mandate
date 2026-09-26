@@ -31,6 +31,14 @@ describe("RPC transport and proxy (R2, R8)", () => {
     expect(message).to.not.contain("PATHKEY");
   });
 
+  it("fails over when an endpoint answers 200 with something that isn't JSON-RPC", async () => {
+    globalThis.fetch = async (url: any) =>
+      String(url).includes("first") ? Response.json({ message: "gateway says no" }) : Response.json({ jsonrpc: "2.0", id: 1, result: 42 });
+    const f = failoverFetch(["https://first.invalid", "https://second.invalid"], { rounds: 1, timeoutMs: 500, hedgeMs: 50 });
+    const body = await (await f("", { body: '{"method":"getSlot"}' })).json();
+    expect(body.result).to.eq(42);
+  });
+
   it("redact() strips query, path and userinfo from any URL in a message", () => {
     const out = redact("fetch https://u:p@host.invalid/k/SECRET?api-key=REVIEW_DUMMY failed; token=REVIEW_DUMMY");
     expect(out).to.eq("fetch https://host.invalid failed; token=[redacted]");

@@ -48,7 +48,11 @@ export function failoverFetch(endpoints: string[], opts: { timeoutMs?: number; h
   async function accept(res: Response, url: string): Promise<Response> {
     const label = endpointLabel(url, urls.indexOf(url));
     if (res.status === 429 || res.status >= 500) throw new Error(`${label} answered HTTP ${res.status}`);
-    if (RATE_LIMITED.test((await res.clone().text()).slice(0, 300))) throw new Error(`${label} is rate limiting`);
+    const text = await res.clone().text();
+    if (RATE_LIMITED.test(text.slice(0, 300))) throw new Error(`${label} is rate limiting`);
+    // Some providers answer 200 with a body that isn't JSON-RPC (a gateway or quota message):
+    // treat it as a failure so another endpoint answers, instead of handing it to the client.
+    if (!/"jsonrpc"\s*:\s*"2\.0"/.test(text) || !/"(result|error)"\s*:/.test(text)) throw new Error(`${label} answered something that isn't JSON-RPC`);
     return res;
   }
 

@@ -109,7 +109,7 @@ function load(key: string, call: any, net: "default" | "mainnet" = "default"): P
       .then((r) => {
         // A null result can mean "not available yet" (getTransaction at this commitment);
         // caching it would hide the transaction for as long as the entry lives.
-        if (r.status === 200 && !/"error"\s*:/.test(r.result.slice(0, 200)) && !/"result"\s*:\s*null\b/.test(r.result.slice(0, 200)))
+        if (r.status === 200 && /"result"\s*:/.test(r.result) && !/"error"\s*:/.test(r.result.slice(0, 200)) && !/"result"\s*:\s*null\b/.test(r.result.slice(0, 200)))
           cache.set(key, { at: Date.now(), ...r });
         return r;
       })

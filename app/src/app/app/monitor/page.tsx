@@ -7,7 +7,7 @@ import { PublicKey } from "@solana/web3.js";
 import { ArrowLeft, Download, FilePen, Pause, Play, Search, Share2, Trash2 } from "lucide-react";
 import { DLMM_PROGRAM, findOperators, newSession, resolvePosition, type Operator, type Session } from "../../../../../sdk/src/observe";
 import { evaluate, packLink, shareable, suggestTerms, type EvalTerms } from "../../../../../sdk/src/report";
-import { CLUSTER, connectionFor, fetchTokenLabels, type ReadCluster } from "@/lib/chain";
+import { CLUSTER, connectionFor, fetchTokenLabels, knownSymbol, type ReadCluster } from "@/lib/chain";
 import { deleteSession, loadSession, saveSession } from "@/lib/local";
 import { useObserver } from "@/lib/observer";
 import { PRESETS, copyText, prefillLink } from "@/lib/drafts";
@@ -105,6 +105,8 @@ function Setup() {
         s.pairFacts.baseSymbol = labels?.[s.pairFacts.baseMint]?.symbol;
         s.pairFacts.quoteSymbol = labels?.[s.pairFacts.quoteMint]?.symbol;
       }
+      s.pairFacts.baseSymbol ??= knownSymbol(s.pairFacts.baseMint);
+      s.pairFacts.quoteSymbol ??= knownSymbol(s.pairFacts.quoteMint);
       if (!saveSession(s, sessionLabel(s))) setError("This browser won't store the session (storage is full or blocked); it will run but won't survive a reload.");
       router.push(`/app/monitor?s=${s.id}`);
     } catch (e: any) {

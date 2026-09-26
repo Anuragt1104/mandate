@@ -134,6 +134,11 @@ const KNOWN_TOKENS: Record<string, TokenLabel> = {
 };
 const labelCache = new Map<string, TokenLabel>(Object.entries(KNOWN_TOKENS));
 
+/** Symbols for well-known mints, whichever cluster is being read. */
+export function knownSymbol(mint: string): string | undefined {
+  return KNOWN_TOKENS[mint]?.symbol;
+}
+
 function readBorshString(d: Uint8Array, o: number): [string, number] {
   const len = d[o] | (d[o + 1] << 8) | (d[o + 2] << 16) | (d[o + 3] << 24);
   const bytes = d.subarray(o + 4, o + 4 + len);
