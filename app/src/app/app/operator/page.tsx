@@ -131,11 +131,12 @@ function Queue() {
   const viewAs = params.get("as");
   const operator = viewAs ?? publicKey?.toBase58() ?? null;
   const trusted = useMemo(() => trustedWatchtowers(book), [book]);
-  const { data: items, error } = usePoll(async () => {
-    if (!operator) return [];
+  const { data: loaded, error } = usePoll(async () => {
+    if (!operator) return { items: [] as Item[], failed: 0 };
     const board = await loadBoard();
     const mine = board.rows.filter((r) => r.m.maker.toBase58() === operator && ["Open", "Active", "Breached", "Expired"].includes(r.status));
     const out: Item[] = [];
+    let failed = 0;
     // One agreement at a time and a short event window each: the queue must stay light on RPC.
     for (const r of mine) {
       try {
@@ -145,13 +146,14 @@ function Queue() {
         const quote = v.labels[v.m.quoteMint.toBase58()]?.symbol ?? "quote";
         out.push(assess(v, events, latestRead(events, r.pubkey.toBase58(), trusted, Math.floor(Date.now() / 1000)), Math.floor(Date.now() / 1000), quote));
       } catch {
-        /* skipped this round; it is retried on the next poll */
+        failed++; // retried on the next poll
       }
     }
     // The watchtower's read decides the order among equals: its breach outlook is the tie-breaker.
     const outlook = (i: Item) => (i.read?.standing === "trusted" && Number.isFinite(i.read.v.read.breach) ? i.read.v.read.breach : 0);
-    return out.sort((a, b) => b.severity - a.severity || outlook(b) - outlook(a));
+    return { items: out.sort((a, b) => b.severity - a.severity || outlook(b) - outlook(a)), failed };
   }, [operator, trusted.size], 20_000);
+  const items = loaded?.items ?? null;
   const [feedback, setFeedback] = useState<Feedback[]>([]);
   useEffect(() => setFeedback(readFeedback()), []);
   const makers = Object.entries(book.parties).filter(([, p]) => p.role === "maker");
@@ -195,7 +197,8 @@ function Queue() {
           </div>
           {!items && !error && <div className="stack"><Skeleton h={120} /><Skeleton h={120} /></div>}
           {error && <div className="notice warn small">{error}</div>}
-          {items && items.length === 0 && <div className="card empty-state"><span className="small">No agreements for this wallet. Drafts sent to you appear here once the team posts them.</span></div>}
+          {loaded && loaded.failed > 0 && <div className="notice warn small" style={{ marginBottom: 12 }}>Couldn&apos;t load {loaded.failed} of this wallet&apos;s agreements (the RPC is busy); retrying.</div>}
+          {items && items.length === 0 && !loaded?.failed && <div className="card empty-state"><span className="small">No agreements for this wallet. Drafts sent to you appear here once the team posts them.</span></div>}
           <div className="stack">{items?.map((i) => <QueueItem key={i.v.key.toBase58()} i={i} book={book} operator={operator} viewAs={!!viewAs} onFeedback={give} given={feedback.find((f) => i.read && f.id === `${i.v.key.toBase58()}:${i.read.v.read.observedTs}`)?.verdict} now={now} />)}</div>
         </>
       )}
