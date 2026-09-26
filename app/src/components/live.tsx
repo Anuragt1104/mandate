@@ -43,8 +43,8 @@ export function NetworkHero() {
               penalised when it isn&apos;t.
             </p>
             <div className="hero-cta">
-              <Link className="btn btn-primary btn-lg" href="/app">Open the network <ArrowRight /></Link>
-              <Link className="btn btn-secondary btn-lg" href="/app/create">Draft an agreement</Link>
+              <Link className="btn btn-primary btn-lg" href="/app/monitor">Monitor your current operator <ArrowRight /></Link>
+              <Link className="btn btn-secondary btn-lg" href="/app/draft">Draft with your operator</Link>
             </div>
           </div>
           <div className="hero-side">

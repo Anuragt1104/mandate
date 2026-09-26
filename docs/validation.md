@@ -51,12 +51,28 @@ words").
 5. What fee, bond and penalty would you accept for this token? What would make you walk away?
 6. Would a public, verifiable record of met periods help you win clients?
 
+## The loop the app now supports, and what to measure at each step
+
+| Step in the app | Signal to record | Why it matters |
+|---|---|---|
+| Monitor an existing arrangement (Reports) | Sessions started; share of sessions reaching "enough evidence" | Teams will point it at a live operator without a wallet or deposit |
+| Share the service report | Reports shared; **reports that led to a payment, remediation or renewal decision** (ask the team) | The report is worth something before any custody change |
+| Draft terms from the report | Drafts started from a report vs from scratch | Observed terms are a better starting point than presets |
+| Operator proposes changes | Which clauses each version changes, and the notes (the version log in the draft) | Clauses that repeatedly block agreement are the product's constraints |
+| Both approve, team funds | Drafts reaching both approvals; time from first draft to funding | A team and an operator can agree terms without us in the room |
+| Renewal report → renew | Terms renewed, with which changes; **second term paid without a subsidy** | The market-fit signal |
+| Operator queue | Alerts marked useful / not useful / dismissed; alerts raised while checks still passed | Whether the watchtower's prioritisation (Jev) helps an operator's day |
+
+The app keeps these in the user's browser (it has no server), so record them in the pilot log below
+from the links people send and short check-ins. Track support time per pilot next to the fee.
+
 ## The paid pilot to offer
 
 "Independent verification of your liquidity agreement, with restricted custody and automated
-settlement as an option." Start by monitoring the existing arrangement read-only
-(`scripts/verify.ts` against the operator's DLMM position on mainnet), deliver a report each
-week, and only then move the same team and operator into an escrowed agreement. Price it as a
+settlement as an option." Start by monitoring the existing arrangement read-only (Monitor in the
+app for a first look; `scripts/verify.ts` for unattended days, imported under Reports), share a
+report each week, and only then draft the escrowed agreement with the same operator from what
+was observed. Price it as a
 monthly monitoring and administration fee; slashing should rarely happen when things work.
 Onboarding and support may cost more than a small fee brings in, so measure the effort next to
 the price.

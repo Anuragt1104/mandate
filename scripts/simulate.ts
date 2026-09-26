@@ -37,7 +37,9 @@ import { MandateClient, MandateTerms, getAccounts, pda, statusName } from "../sd
 import { makerTick, sandwichCheck, tradeOnce, withdrawAll } from "../keeper/agents";
 import { Watchtower } from "../keeper/watchtower";
 import { systemOneFromEnv } from "../sdk/src/systemone";
-import { RPC_URL, fetchMandate, loadKeypair, makeClient, makeConnection, sendIxs, sleep } from "../keeper/common";
+import { RPC_URL, fetchMandate, fetchPair, loadKeypair, makeClient, makeConnection, sendIxs, sleep } from "../keeper/common";
+import { applyProposals, newDraft, proposeChanges, propose, termsHash, type DraftDoc, type DraftTerms, type LogPeriod } from "../sdk/src";
+import { APP_URL, approveAs, fundAs, linkFor } from "./lib/drafts";
 import { CLUSTER_NAME, IS_LOCAL, KEY_DIR, ROOT, SUFFIX, createMandatedConfig, ensureAta, fund, helperKey, launchAndGraduate, mintTo, newMint, pairAtGraduatedPrice } from "./lib/launch";
 
 const conn = makeConnection();
@@ -361,10 +363,18 @@ async function run() {
       const mandate = pda.mandate(st.issuer.key.publicKey, baseMint, id);
       const treasury = await conn.getTokenAccountBalance(getAssociatedTokenAddressSync(baseMint, st.issuer.key.publicKey)).then((b) => BigInt(b.value.amount));
       const terms = st.terms();
+      // Size the token inventory by value, not by share of the treasury: asks worth several
+      // times the minimum depth, so ordinary net buying can't exhaust them (a maker can't buy
+      // tokens back from the vault). A thin ask side is what breached the earlier ORBT terms.
+      const pairNow = await fetchPair(conn, new PublicKey(mk.lbPair));
+      const atomicPrice = Math.pow(1 + pairNow.binStep / 10_000, pairNow.activeId);
+      const wantBase = BigInt(Math.floor((Number(terms.minDepthQuote) * 8) / atomicPrice));
+      // At most half the treasury, so a scene running alongside can still fund its own agreement.
+      const baseDeposit = wantBase < treasury / 2n ? wantBase : treasury / 2n;
       await sendIxs(conn, st.issuer.key, [
         await cl(st.issuer).createMandate({
           issuer: st.issuer.key.publicKey, baseMint, quoteMint: quote, lbPair: new PublicKey(mk.lbPair), referencePool: new PublicKey(mk.dammPool), id, terms,
-          baseDeposit: new BN((treasury / 4n).toString()), quoteDeposit: USDC(3_000), feeBudget: terms.feePerPeriod.muln(terms.durationPeriods),
+          baseDeposit: new BN(baseDeposit.toString()), quoteDeposit: USDC(3_000), feeBudget: terms.feePerPeriod.muln(terms.durationPeriods),
           designatedMaker: st.maker.key.publicKey,
         }),
       ]);
@@ -532,7 +542,8 @@ async function scene(name: string | undefined, arg: string | undefined) {
     say(c.ferro, `bought ${Math.round(t.quoteSize).toLocaleString("en-US")} USDC of ORBT in one block; the reference follows at up to 2% a minute`);
     return;
   }
-  if (name !== "walkaway") throw new Error("scenes: walkaway [minutes] | sandwich | whale");
+  if (name === "term") return termScene(c, s, Number(arg ?? 6));
+  if (name !== "walkaway") throw new Error("scenes: walkaway [minutes] | term [periods] | sandwich | whale");
 
   const minutes = Number(arg ?? 3);
   const mk = s.markets.kite;
@@ -585,6 +596,97 @@ async function scene(name: string | undefined, arg: string | undefined) {
     if (st === "Settled") break;
     await sleep(10_000);
   }
+}
+
+/**
+ * The ordinary successful path, through the customer workflow: Nova drafts a short ORBT
+ * agreement for Helios, Helios counter-proposes, both sign identical terms, Nova funds exactly
+ * that version, Helios quotes through the term and is paid, the watchtower settles, and the
+ * renewal is drafted from the term's record, approved again and funded.
+ */
+async function termScene(c: ReturnType<typeof cast>, s: ReturnType<typeof loadState>, periods: number) {
+  const cl = (p: Persona) => makeClient(conn, p.key);
+  const mk = s.markets.orbt;
+  const team = c.nova;
+  const operator = c.helios;
+  const pairNow = await fetchPair(conn, new PublicKey(mk.lbPair));
+  const baseDecimals = (await conn.getAccountInfo(new PublicKey(mk.mint)))!.data[44];
+  const atomicPrice = Math.pow(1 + pairNow.binStep / 10_000, pairNow.activeId);
+  const minDepth = 300;
+  // Token inventory worth several times the minimum at today's price (see the inventory cover in
+  // the draft), but no more than 40% of what the team holds.
+  const held = await conn.getTokenAccountBalance(getAssociatedTokenAddressSync(new PublicKey(mk.mint), team.key.publicKey)).then((b) => Number(b.value.amount) / 10 ** baseDecimals);
+  const baseUi = Math.floor(Math.min((minDepth * 8 * 1e6) / atomicPrice / 10 ** baseDecimals, held * 0.4));
+  const terms: DraftTerms = {
+    feePerPeriod: "1", periodMinutes: "1", durationPeriods: String(periods), bond: "100", maxSpreadBps: "100", minDepth: String(minDepth),
+    depthWindowBps: "200", bandBps: "500", twapMinutes: "2", speedPctPerMin: "2", liquidityLockSecs: "20", maxConsecutiveFailures: "3", slashPct: "50",
+    baseDeposit: String(baseUi), quoteDeposit: "3000",
+  };
+  const market = { cluster: CLUSTER_NAME, baseMint: mk.mint, quoteMint: s.quoteMint!, lbPair: mk.lbPair, referencePool: mk.dammPool, base: "ORBT", quote: "USDC" };
+
+  async function negotiateAndFund(doc: DraftDoc, counter: Partial<DraftTerms> | null, why: string) {
+    say(team, `drafted: ${await linkFor(doc)}`);
+    if (counter) {
+      doc = propose(doc, { ...doc.versions[doc.versions.length - 1].terms, ...counter }, "operator", why);
+      say(operator, `proposed version ${doc.versions.length}: ${why}`);
+    }
+    doc = await approveAs(doc, operator.key, "operator");
+    doc = await approveAs(doc, team.key, "team");
+    say(null, dim(`both signed terms ${(await termsHash(doc, doc.versions[doc.versions.length - 1].n)).slice(0, 12)}: ${await linkFor(doc)}`));
+    const r = await fundAs(conn, cl(team), team.key, doc);
+    say(team, `funded and posted exactly the approved version · ${r.mandate.toBase58()}`);
+    say(null, dim(`draft record: ${await linkFor(r.doc)}`));
+    return r.mandate;
+  }
+
+  async function serve(mandate: PublicKey) {
+    const client = cl(operator);
+    for (;;) {
+      const m = await fetchMandate(conn, client, mandate).catch(() => null);
+      const st = m ? statusName(m.status) : "";
+      if (st === "Settled") break;
+      if (st === "Open" || st === "Active") {
+        for (let i = 0; i < 4; i++) {
+          const did = await makerTick(conn, operator.key, client, mandate, { autoAccept: true }).catch((e) => `skipped: ${e.message?.split("\n")[0]}`);
+          if (!did) break;
+          say(operator, `${did} · ORBT term`);
+        }
+      }
+      if (m && st !== "Open" && Number(m.feesEarned) > Number(m.feesClaimed)) {
+        await sendIxs(conn, operator.key, [await client.claimMakerFees({ mandate, m })]).catch(() => undefined);
+      }
+      await sleep(15_000);
+    }
+    const m = await fetchMandate(conn, client, mandate);
+    say(null, `term complete: ${m.periodsOk} periods met, ${m.periodsFailed} failed, ${m.periodsUnobserved} unchecked; ${(Number(m.feesEarned) / 1e6).toFixed(2)} USDC paid to ${operator.name}`);
+    say(null, dim(`renewal report: ${APP_URL}/app/mandate/${mandate.toBase58()}/report`));
+    return m;
+  }
+
+  banner(`Scene: a ${periods}-period ORBT agreement with ${operator.name}, negotiated, served and renewed`);
+  const first = await negotiateAndFund(
+    newDraft(market, terms, "team", { team: team.key.publicKey.toBase58(), operator: operator.key.publicKey.toBase58(), title: `ORBT/USDC · ${periods}-minute term with ${operator.name}` }),
+    { bond: "80" },
+    `a ${periods}-minute term doesn't need a 100 USDC bond`,
+  );
+  const m1 = await serve(first);
+
+  // Renew from the record: the same reasoning as the renewal report.
+  const log = cl(team).decodeScoreLog((await conn.getAccountInfo(m1.scoreLog))!.data);
+  const n = log.count as number;
+  const entries: LogPeriod[] = Array.from({ length: n }, (_, k) => log.entries[(log.head - n + k + log.entries.length) % log.entries.length]).map((e: any) => ({
+    period: e.period, status: e.status, snapshots: e.snapshots, minBid: Number(e.minBidDepth) / 1e6, minAsk: Number(e.minAskDepth) / 1e6, worstSpreadBps: e.worstSpreadBps,
+  }));
+  const proposals = proposeChanges({ terms: { ...terms, bond: "80" }, log: entries, counters: { ok: m1.periodsOk, failed: m1.periodsFailed, unobserved: m1.periodsUnobserved }, breached: false, quote: "USDC" });
+  const renewal = applyProposals({ ...terms, bond: "80" }, proposals);
+  say(null, `renewal proposals: ${proposals.map((p) => p.title.toLowerCase()).join("; ") || "none"}`);
+  const second = await negotiateAndFund(
+    newDraft(market, renewal, "team", { team: team.key.publicKey.toBase58(), operator: operator.key.publicKey.toBase58(), renews: first.toBase58(), title: `ORBT/USDC · renewal with ${operator.name}` }),
+    null,
+    "",
+  );
+  await serve(second);
+  banner("ORBT agreement renewed and completed a second paid term");
 }
 
 const cmd = process.argv[2];

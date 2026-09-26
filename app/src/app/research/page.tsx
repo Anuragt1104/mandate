@@ -105,7 +105,7 @@ export default function Research() {
               <p>Reproduce it with <code>npx tsx scripts/liquidity-study.ts --pages 30</code> from the <a className="link" href={REPO_URL} target="_blank" rel="noreferrer">repository</a>.</p>
             </div>
             <div className="row wrap" style={{ marginTop: 8 }}>
-              <Link className="btn btn-primary" href="/app">See a token with a market maker under contract <ArrowRight /></Link>
+              <Link className="btn btn-primary" href="/app/agreements">See a token with a market maker under contract <ArrowRight /></Link>
             </div>
           </div>
         </section>

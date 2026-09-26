@@ -20,3 +20,4 @@ app/public/personas.json
 .env*.local
 reports/
 .keeper/
+.claude/

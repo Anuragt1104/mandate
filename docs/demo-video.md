@@ -6,7 +6,8 @@ them separate.
 
 Everything in the demo runs on the live app (https://mandate-lac-rho.vercel.app) on devnet,
 driven by the simulated test network. Say once, early, that the participants are simulated:
-it is a reproducible demonstration, not traction.
+it is a reproducible demonstration, not traction. Show both an ordinary agreement that is paid
+and renewed and a failure that ends in recovery; the first is why customers would keep paying.
 
 ## Before you record
 
@@ -16,29 +17,39 @@ it is a reproducible demonstration, not traction.
    CLUSTER=devnet RPC_URL=https://api.devnet.solana.com npx tsx scripts/simulate.ts run
    ```
 
-2. Browser at about 1440×900, light mode. Open the landing page, `/app`, and `/app/create`.
-3. About six minutes before recording the breach, start a fresh one in a second terminal. The
-   maker quotes for two minutes, withdraws, and the breach and settlement follow within about
-   four minutes:
+2. Browser at about 1440×900, light mode.
+3. About 20 minutes before recording, start the successful path in a second terminal: Nova drafts
+   a six-period ORBT agreement for Helios, Helios counter-proposes a smaller bond, both sign, Nova
+   funds exactly that version, Helios quotes and is paid, and the renewal is drafted from the
+   record, approved again and funded. The log prints the draft links and the renewal report.
+
+   ```bash
+   CLUSTER=devnet RPC_URL=https://api.devnet.solana.com npx tsx scripts/simulate.ts scene term 6
+   ```
+
+4. About six minutes before recording the failure, start one in a third terminal. Lazy Capital
+   quotes for two minutes, withdraws, and the breach and settlement follow within about four:
 
    ```bash
    CLUSTER=devnet RPC_URL=https://api.devnet.solana.com npx tsx scripts/simulate.ts scene walkaway 2
    ```
 
-   Open the new KITE agreement from the network board as soon as it appears.
+5. In the app, start Monitor on the test network's ORBT pool a few minutes early, so the report
+   has evidence to show.
 
-## Demo (under 3 minutes): one agreement, start to settlement
+## Demo (under 3 minutes): the customer's journey, then the failure it survives
 
 | Time | Screen | Say |
 |---|---|---|
-| 0:00 | Draft an agreement: "Your operator", then the plain-words preview | "A token team puts its existing liquidity operator under an agreement. Both sides read the same terms in plain words: what the team supplies, what the operator locks, what earns pay, what triggers the penalty, when it ends." |
-| 0:25 | A live agreement's status page: banner and service levels | "The inventory sits in a vault the operator can only quote from. Anyone can check at any time; each tick is one scoring period." |
-| 0:45 | The committed book and "What a trader gets right now" | "What is enforced is committed liquidity near the reference price, valued bin by bin, so trades can't fake it. Execution at each size is shown next to it but not enforced." |
-| 1:05 | Terminal: `scene sandwich`; the feed line | "An attacker buys out the asks and forces a check in the same transaction. The check still passes: that's why we measure commitment, not the momentary book." |
-| 1:25 | The walk-away agreement: Operational, then failed checks | "This operator pulled its liquidity. The checks fail, the watchtower checks it more often, and the incident log records why." |
-| 1:55 | Breach: banner, incident, settlement receipt with transaction links | "Three failed periods in a row: half the bond goes to the team, and settlement returns the inventory and unused fees to the team and the earned fees and remaining bond to the operator." |
-| 2:30 | Maker ratings | "Every closed period is written to the operator's public record." |
-| 2:45 | Landing page | "Mandate: restricted custody and automatic settlement for liquidity agreements. Live on devnet." |
+| 0:00 | Overview: the two entry points | "A token team already pays a liquidity operator. It starts here, without a wallet." |
+| 0:10 | Monitor on the ORBT pool: operator found, periods filling, evidence panel | "Point it at the pool. It samples the operator's book at random times with the program's own arithmetic, and says when there's enough evidence and what's missing." |
+| 0:35 | The replay and trader table; change the depth, the replay updates | "The same observations replay against any terms. Committed depth and what traders could actually execute are reported separately." |
+| 0:50 | "Draft terms from this" → the draft: feasibility, inventory cover, the what-if | "The draft starts from what was delivered. Before anyone signs: what each side puts in, what the inventory covers, how the rules would have played out, and what can't be concluded." |
+| 1:15 | The scene's draft link: version 2 by the operator, both approvals | "The operator pushed back on the bond. Both sides signed the same terms hash; only that version can be funded." |
+| 1:30 | The funded agreement's status page, then its renewal report | "It ran its term: paid for every compliant period. The renewal report separates fees, unused budget and penalties, and proposes changes from the record." |
+| 1:55 | The walk-away agreement: failed checks, breach, closing report and handover | "When an operator walks away, the checks fail, the bond is slashed, the inventory comes back, and the handover invites a new operator. The gap is on the record." |
+| 2:30 | Operator queue, viewed as Helios | "Operators get a work queue: what changed since the last passing check, a simulated action to approve, and the watchtower's read, which they rate." |
+| 2:45 | Overview | "Mandate: monitor, agree, and renew liquidity management with custody and settlement on chain. Live on devnet." |
 
 ## Pitch (2 to 3 minutes)
 

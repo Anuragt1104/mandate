@@ -196,7 +196,7 @@ export default function Launch() {
             </p>
             <div className="row wrap">
               <Link className="btn btn-secondary" href="/app/create">Draft the token&apos;s SLA</Link>
-              <Link className="btn btn-ghost" href="/app">See the live demo launch</Link>
+              <Link className="btn btn-ghost" href="/app/agreements">See the live demo launch</Link>
             </div>
           </Step>
         </div>

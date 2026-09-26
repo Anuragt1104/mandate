@@ -56,6 +56,22 @@ export function connection(): Connection {
   return _conn;
 }
 
+/** Clusters the monitor can read. The app's own cluster uses connection(); mainnet goes through the proxy read-only. */
+export type ReadCluster = "devnet" | "mainnet" | "localnet";
+const _byCluster = new Map<string, Connection>();
+export function connectionFor(cluster: ReadCluster): Connection {
+  if (cluster === CLUSTER || cluster === "localnet") return connection();
+  let c = _byCluster.get(cluster);
+  if (!c) {
+    const direct = cluster === "mainnet" ? "https://api.mainnet-beta.solana.com" : "https://api.devnet.solana.com";
+    const proxy = typeof window !== "undefined" && CLUSTER !== "localnet" ? [`${window.location.origin}/api/rpc?cluster=${cluster}`] : [];
+    const f = failoverFetch([...proxy, direct], { timeoutMs: 10_000, hedgeMs: 3_000, rounds: 2 });
+    c = new Connection(direct, { commitment: "confirmed", disableRetryOnRateLimit: true, fetch: f as any });
+    _byCluster.set(cluster, c);
+  }
+  return c;
+}
+
 /**
  * For wallet actions: the same endpoints, but the proxy never answers from its cache, so a
  * transaction is built from the account state as it is now, not as a dashboard last saw it.

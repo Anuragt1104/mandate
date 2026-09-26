@@ -45,7 +45,7 @@ function NotFound({ text }: { text: string }) {
       <CircleAlert />
       <span className="h3" style={{ color: "var(--ink)" }}>SLA not found</span>
       <span className="small">{text}</span>
-      <Link className="btn btn-secondary btn-sm" href="/app"><ArrowLeft />Back to the network</Link>
+      <Link className="btn btn-secondary btn-sm" href="/app/agreements"><ArrowLeft />All agreements</Link>
     </div>
   );
 }
@@ -138,7 +138,7 @@ function Detail({ v, now, reload, error }: { v: MandateView; now: number; reload
 
   return (
     <>
-      <Link className="crumb" href="/app"><ArrowLeft />Network</Link>
+      <Link className="crumb" href="/app/agreements"><ArrowLeft />Agreements</Link>
       <div className="sla-head">
         <div style={{ minWidth: 0 }}>
           <span className="eyebrow">Liquidity SLA · {shortAddr(key, 4)}</span>
@@ -153,7 +153,12 @@ function Detail({ v, now, reload, error }: { v: MandateView; now: number; reload
             {status === "Active" && <span className="mono xs">Period {(clockPeriod + 1).toLocaleString("en-US")} of {t.durationPeriods.toLocaleString("en-US")}</span>}
           </div>
         </div>
-        {error && <span className="xs muted">Showing the last loaded data. {error}</span>}
+        <div className="row wrap" style={{ gap: 8, alignItems: "center" }}>
+          {error && <span className="xs muted">Showing the last loaded data. {error}</span>}
+          {status !== "Open" && status !== "Cancelled" && (
+            <Link className="btn btn-secondary btn-sm" href={`/app/mandate/${key.toBase58()}/report`}>{["Breached", "Expired", "Settled"].includes(status) ? "Closing report and handover" : "Renewal report"}</Link>
+          )}
+        </div>
       </div>
 
       <SlaBanner s={banner} stat={status === "Open" ? { value: `${fmtFull(q(t.feePerPeriod))} ${quote}`, label: `per compliant ${duration(t.periodSecs)}` } : { value: pct(up), label: `uptime · ${entries.filter((e) => e.status !== 3).length} checked periods` }} />

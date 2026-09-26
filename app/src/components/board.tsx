@@ -73,7 +73,7 @@ export function SlaBoard({ board, book, now, cells = 48, limit, foot = true, tit
       {foot && (
         <div className="board-foot">
           <span className="xs muted">Each tick is one scoring period (one minute on the test network). Names marked SIM are simulated participants making real transactions.</span>
-          <Link className="link small row" style={{ gap: 4 }} href="/app">Open the network <ArrowRight style={{ width: 14, height: 14 }} /></Link>
+          <Link className="link small row" style={{ gap: 4 }} href="/app/agreements">All agreements <ArrowRight style={{ width: 14, height: 14 }} /></Link>
         </div>
       )}
     </div>

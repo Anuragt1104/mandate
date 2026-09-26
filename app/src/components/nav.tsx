@@ -20,10 +20,16 @@ export const REPO_URL = "https://github.com/Anuragt1104/mandate";
 export const SECURITY_URL = `${REPO_URL}/blob/main/docs/security.md`;
 export const PROGRAM_ID = "3YetFVe4F6MuYaHH7pAmTCZjtMnunQT1ufMdAY8rYFrn";
 
+/** The first customer's journey: see where you stand, the agreements, the reports. */
 const APP_NAV = [
-  { href: "/app", label: "Network", match: (p: string) => p === "/app" || p.startsWith("/app/mandate") },
-  { href: "/app/makers", label: "Makers" },
-  { href: "/app/create", label: "Draft an agreement" },
+  { href: "/app", label: "Overview", match: (p: string) => p === "/app" },
+  { href: "/app/agreements", label: "Agreements", match: (p: string) => p.startsWith("/app/agreements") || (p.startsWith("/app/mandate") && !p.endsWith("/report")) || p.startsWith("/app/create") },
+  { href: "/app/reports", label: "Reports", match: (p: string) => ["/app/reports", "/app/report", "/app/monitor", "/app/draft"].some((x) => p.startsWith(x)) || p.endsWith("/report") },
+];
+/** Everything else, one step back. */
+const MORE_NAV = [
+  { href: "/app/operator", label: "Operator queue" },
+  { href: "/app/makers", label: "Operator ratings" },
   { href: "/app/launch", label: "Launchpads" },
   { href: "/research", label: "Research" },
 ];
@@ -50,6 +56,10 @@ export function AppNav() {
             const current = n.match ? n.match(path) : path.startsWith(n.href);
             return <Link key={n.href} href={n.href} aria-current={current ? "page" : undefined}>{n.label}</Link>;
           })}
+          <span className="nav-sep" aria-hidden="true" />
+          {MORE_NAV.map((n) => (
+            <Link key={n.href} href={n.href} className="nav-secondary" aria-current={path.startsWith(n.href) ? "page" : undefined}>{n.label}</Link>
+          ))}
         </nav>
         <div className="topbar-right">
           <ClusterBadge />
@@ -70,8 +80,8 @@ export function MarketingNav() {
       <div className="container topbar-inner">
         <Link href="/" aria-label="Mandate home"><Wordmark /></Link>
         <nav className={`nav ${open ? "open" : ""}`} aria-label="Main" onClick={() => setOpen(false)}>
-          <Link href="/app">Network</Link>
-          <a href="/#contract">The SLA</a>
+          <Link href="/app/monitor">Monitor</Link>
+          <a href="/#contract">The agreement</a>
           <a href="/#incidents">Attacks it survives</a>
           <Link href="/app/makers">Makers</Link>
           <Link href="/research">Research</Link>
@@ -82,7 +92,7 @@ export function MarketingNav() {
             Source
           </a>
           <Link className="btn btn-primary btn-sm" href="/app">
-            Open the network
+            Open the app
             <ArrowRight />
           </Link>
           <button className="icon-btn menu-toggle" onClick={() => setOpen((o) => !o)} aria-label="Menu" aria-expanded={open} style={{ width: 32, height: 32 }}>
@@ -104,9 +114,11 @@ export function Footer() {
           <span className="mono xs faint">Program {PROGRAM_ID.slice(0, 6)}…{PROGRAM_ID.slice(-6)} · Solana {CLUSTER}</span>
         </div>
         <nav className="footer-links" aria-label="Footer">
-          <Link href="/app">Network</Link>
-          <Link href="/app/makers">Maker ratings</Link>
-          <Link href="/app/create">Draft an agreement</Link>
+          <Link href="/app">Overview</Link>
+          <Link href="/app/monitor">Monitor an arrangement</Link>
+          <Link href="/app/draft">Draft with your operator</Link>
+          <Link href="/app/agreements">Agreements</Link>
+          <Link href="/app/makers">Operator ratings</Link>
           <Link href="/app/launch">For launchpads</Link>
           <Link href="/research">Research</Link>
           <a href={SECURITY_URL} target="_blank" rel="noreferrer">Security model</a>

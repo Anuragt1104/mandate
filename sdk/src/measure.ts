@@ -115,54 +115,67 @@ export type CommittedResult =
   /** An input the program would need is missing (it would reject the snapshot): no verdict. */
   | { status: "unknown"; reason: string };
 
-/** scoring.rs measure(), exactly: raw quote atoms in, the program's verdict out. */
-export function measureCommitted(input: MeasureInput): CommittedResult {
-  const step = Math.max(1, input.binStep);
-  const windowBins = Math.floor(input.terms.depthWindowBps / step);
-  let size = input.terms.minDepthQuote / SPREAD_SIZE_DIVISOR;
+/**
+ * One bin's committed value for a position (scoring.rs `committed`): the bin valued at its own
+ * price, then the position's share of it. A string explains why it can't be computed.
+ */
+export function binCommitted(bin: number, pos: { lower: number; upper: number; shares: bigint[] }, binArray: (index: number) => RawBin[] | undefined, binStep: number): bigint | string {
+  if (bin < pos.lower || bin > pos.upper) return 0n;
+  const share = pos.shares[bin - pos.lower] ?? 0n;
+  if (share === 0n) return 0n;
+  const idx = binArrayIndexOf(bin);
+  const arr = binArray(idx);
+  if (!arr) return `bin array ${idx} was not read`;
+  const b = arr[bin - idx * BINS_PER_ARRAY];
+  if (!b) return "bin outside its array";
+  if (b.liquiditySupply === 0n) return 0n;
+  const p = priceQ64(bin, Math.max(1, binStep));
+  if (p === null) return "price overflow";
+  const value = baseToQuote(b.amountX, p) + b.amountY;
+  const mine = mulDiv(value, share, b.liquiditySupply);
+  if (mine === null) return "value overflow";
+  return mine > U64_MAX ? U64_MAX : mine;
+}
+
+/**
+ * scoring.rs summation over per-bin committed values: the reference bin and the whole bins
+ * within the window below it are bids, the whole bins within the window above it are asks,
+ * and the spread is measured at a tenth of the minimum depth. `value` may combine several
+ * positions (their per-bin values add); a string from it makes the result unknown.
+ */
+export function scoreCommitted(value: (bin: number) => bigint | string, anchor: number, binStep: number, terms: RawTerms, hasPosition = true): CommittedResult {
+  const step = Math.max(1, binStep);
+  const windowBins = Math.floor(terms.depthWindowBps / step);
+  let size = terms.minDepthQuote / SPREAD_SIZE_DIVISOR;
   if (size < 1n) size = 1n;
-  const anchor = input.anchorBin;
   let bidDepth = 0n;
   let askDepth = 0n;
   let bidAt: number | null = null;
   let askAt: number | null = null;
-  const pos = input.position;
-
-  if (pos) {
-    const committed = (bin: number): bigint | string => {
-      if (bin < pos.lower || bin > pos.upper) return 0n;
-      const share = pos.shares[bin - pos.lower] ?? 0n;
-      if (share === 0n) return 0n;
-      const idx = binArrayIndexOf(bin);
-      const arr = input.binArray(idx);
-      if (!arr) return `bin array ${idx} was not read`;
-      const b = arr[bin - idx * BINS_PER_ARRAY];
-      if (!b) return "bin outside its array";
-      if (b.liquiditySupply === 0n) return 0n;
-      const p = priceQ64(bin, step);
-      if (p === null) return "price overflow";
-      const value = baseToQuote(b.amountX, p) + b.amountY;
-      const mine = mulDiv(value, share, b.liquiditySupply);
-      if (mine === null) return "value overflow";
-      return mine > U64_MAX ? U64_MAX : mine;
-    };
+  if (hasPosition) {
     const sat = (a: bigint, b: bigint) => (a + b > U64_MAX ? U64_MAX : a + b);
     for (let k = 0; k <= windowBins; k++) {
-      const v = committed(anchor - k);
+      const v = value(anchor - k);
       if (typeof v === "string") return { status: "unknown", reason: v };
       bidDepth = sat(bidDepth, v);
       if (bidAt === null && bidDepth >= size) bidAt = anchor - k;
     }
     for (let k = 1; k <= windowBins; k++) {
-      const v = committed(anchor + k);
+      const v = value(anchor + k);
       if (typeof v === "string") return { status: "unknown", reason: v };
       askDepth = sat(askDepth, v);
       if (askAt === null && askDepth >= size) askAt = anchor + k;
     }
   }
   const spreadBps = bidAt !== null && askAt !== null ? Math.min((askAt - bidAt) * step, EMPTY_SIDE) : EMPTY_SIDE;
-  const ok = !!pos && spreadBps <= input.terms.maxSpreadBps && bidDepth >= input.terms.minDepthQuote && askDepth >= input.terms.minDepthQuote;
+  const ok = hasPosition && spreadBps <= terms.maxSpreadBps && bidDepth >= terms.minDepthQuote && askDepth >= terms.minDepthQuote;
   return { status: "measured", ok, bidDepth, askDepth, spreadBps };
+}
+
+/** scoring.rs measure(), exactly: raw quote atoms in, the program's verdict out. */
+export function measureCommitted(input: MeasureInput): CommittedResult {
+  const pos = input.position;
+  return scoreCommitted((bin) => (pos ? binCommitted(bin, pos, input.binArray, input.binStep) : 0n), input.anchorBin, input.binStep, input.terms, !!pos);
 }
 
 // ---------------------------------------------------------------- estimate (shown only)

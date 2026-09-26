@@ -155,7 +155,7 @@ export default function Landing() {
               ))}
             </div>
             <div className="row wrap" style={{ marginTop: 18 }}>
-              <Link className="btn btn-secondary" href="/app">Watch the live feed <ArrowRight /></Link>
+              <Link className="btn btn-secondary" href="/app/agreements">Watch the live feed <ArrowRight /></Link>
             </div>
           </div>
         </section>
@@ -214,7 +214,7 @@ export default function Landing() {
                 <p>Watch the test network, read an agreement in plain words, or draft terms for your own token and operator in a couple of minutes.</p>
               </div>
               <div className="row wrap">
-                <Link className="btn btn-primary btn-lg" href="/app">Open the network <ArrowRight /></Link>
+                <Link className="btn btn-primary btn-lg" href="/app">Open the app <ArrowRight /></Link>
                 <Link className="btn btn-secondary btn-lg" href="/app/create">Draft an agreement</Link>
               </div>
             </div>

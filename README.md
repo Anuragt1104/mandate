@@ -33,6 +33,34 @@ the DBC `leftover_receiver`, and a graduating token's unsold supply moves into a
 escrow as inventory instead of into a wallet. That funds the ask side only; the team or
 launchpad still supplies quote tokens and a fee budget, and a maker has to accept.
 
+## The workflow
+
+The app is organised around a team that already pays an operator and is coming up for renewal:
+
+1. **Monitor an existing arrangement.** Paste the pool or the operator's position. With no
+   wallet and no deposit, the app samples the operator's DLMM liquidity at random times, measures
+   it with the program's own arithmetic, and keeps the exact per-bin evidence. It reports
+   periods met, missed, incomplete and unobserved; what traders could execute, separately;
+   and when there's enough evidence to read it, and what is missing. The report is a shareable
+   link. `scripts/verify.ts` does the same unattended for days; import its file under Reports.
+2. **Draft with the operator.** Terms can start from what was observed. The feasibility preview
+   shows what each side commits (inventory, the whole fee budget up front, the bond), how far
+   the inventory stretches, a replay of each option against the observations, a separate what-if
+   for reference moves, and what can't be concluded. Up to three versions compare side by side.
+3. **Negotiate before money moves.** The draft travels as a private link. Either side proposes
+   versions with a note; changes are highlighted by group (fee, bond, duration, reference,
+   failure conditions). Each side approves by signing the exact terms hash with its wallet;
+   only a version both signed can be funded, and it is funded exactly. `scripts/draft.ts` does
+   the same with keypairs.
+4. **Run and renew.** The agreement page shows the service live. Its renewal report answers
+   "was it worth paying for?": periods, fees paid, unused budget and penalties kept apart,
+   incidents with recovery times, inventory at the start and end, trader experience, and
+   proposed changes tied to the evidence. "Renew with these changes" starts a new draft; live
+   terms never change. When an agreement ends badly, the closing report records the handover:
+   returned assets, the gap until the next agreement, and an invitation to a new operator.
+5. **Operators get a work queue**: what needs attention, what changed since the last passing
+   check, and a proposed action to simulate and approve, ranked with the watchtower's read.
+
 Next steps and the evidence we still need are in [docs/validation.md](docs/validation.md).
 
 ## Repository layout

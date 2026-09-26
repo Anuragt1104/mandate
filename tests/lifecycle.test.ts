@@ -22,7 +22,7 @@ import {
   warp,
   writeReferencePool,
 } from "./helpers";
-import { MandateClient, MandateTerms, pda, decodeLbPair, decodeBinArray, decodePosition, measureAccounts, statusName, type BinInfo } from "../sdk/src";
+import { MandateClient, MandateTerms, pda, decodeLbPair, decodeBinArray, decodePosition, measureAccounts, newSession, scoreSample, statusName, takeSample, type BinInfo } from "../sdk/src";
 
 const U = (n: number) => new BN(Math.round(n * 1e6));
 
@@ -330,6 +330,19 @@ describe("mandate lifecycle", () => {
       expect(sdk.status, what).to.eq("measured");
       if (sdk.status !== "measured") return;
       expect([sdk.ok, sdk.bidDepth.toString(), sdk.askDepth.toString(), sdk.spreadBps], what).to.deep.eq([
+        !!m.last.ok, m.last.bidDepthQuote.toString(), m.last.askDepthQuote.toString(), m.last.spreadBps,
+      ]);
+      // The read-only verifier's sample of the same position, replayed against the same terms
+      // at the same reference, gives the program's verdict and depths too.
+      if (!pos) return;
+      const shim: any = {
+        getAccountInfo: async (k: PublicKey) => svm.getAccount(k),
+        getMultipleAccountsInfoAndContext: async (ks: PublicKey[]) => ({ context: { slot: 1 }, value: ks.map((k) => svm.getAccount(k)) }),
+      };
+      const session = await newSession(shim, { cluster: "localnet", pair: pair.lbPair, position: m.position, periodSecs: 600 });
+      const sample = await takeSample(shim, session);
+      const replay = scoreSample(session, sample, { minDepth: Number(m.terms.minDepthQuote) / 1e6, depthWindowBps: m.terms.depthWindowBps, maxSpreadBps: m.terms.maxSpreadBps }, m.last.anchorBin);
+      expect([replay.result === "met", Math.round(replay.bid! * 1e6).toString(), Math.round(replay.ask! * 1e6).toString(), replay.spreadBps], `${what} (verifier)`).to.deep.eq([
         !!m.last.ok, m.last.bidDepthQuote.toString(), m.last.askDepthQuote.toString(), m.last.spreadBps,
       ]);
     };
