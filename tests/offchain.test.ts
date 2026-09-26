@@ -322,27 +322,32 @@ describe("the model never delays a check (R6, R10)", () => {
     const worker = new ModelWorker({ url: "https://model.invalid" }, store, { timeoutMs: 100, trip: 3, coolMs: 60_000 });
     const obs = { pair: "T/U", quote: "U", terms: { minDepth: 1, windowPct: 2, maxSpreadBps: 100, periodSecs: 60, maxFailures: 3 }, scoringAgoSecs: 100, checks: [], failedPeriodsInARow: 0, makerActivity: [], activityComplete: true, position: { open: false }, escrowIdleShare: 1, record: null };
     const started = Date.now();
-    for (let i = 0; i < 3; i++) worker.submit({ key: `k${i}`, obs: obs as any, observedTs: 1, hash: `h${i}`, periodSecs: 60 });
+    const rules = assessWithRules(obs as any);
+    for (let i = 0; i < 3; i++) worker.submit({ key: `k${i}`, obs: obs as any, rules, observedTs: 1, hash: `h${i}`, periodSecs: 60 });
     expect(Date.now() - started).to.be.lt(20, "submit doesn't wait for the model");
     await worker.idle(2_000);
     expect(worker.stats.failed).to.eq(3);
     expect(worker.open).to.eq(true);
-    worker.submit({ key: "k9", obs: obs as any, observedTs: 1, hash: "h9", periodSecs: 60 });
+    worker.submit({ key: "k9", obs: obs as any, rules, observedTs: 1, hash: "h9", periodSecs: 60 });
     expect(worker.stats.skippedOpen).to.eq(1);
   });
 
-  it("publishes a model read only for the exact observation it assessed, and only until it expires", async () => {
+  it("publishes a model read only for the observation it assessed, with the facts it saw, and only until it expires", async () => {
     const client = new MandateClient(mandateProgram());
     const wt = new Watchtower({} as any, Keypair.generate(), client) as any;
     const key = Keypair.generate().publicKey.toBase58();
     const rec = wt.store.get(key);
     const x = { key, m: { last: { ts: new BN(1_000) }, startTs: new BN(0), terms: { periodSecs: 60 } } };
     const o: Observation = { pair: "T/U", quote: "U", terms: { minDepth: 100, windowPct: 2, maxSpreadBps: 100, periodSecs: 60, maxFailures: 3 }, scoringAgoSecs: 900, checks: [{ agoSecs: 5, ok: false, bids: 0, asks: 0, spreadBps: null }], failedPeriodsInARow: 1, makerActivity: [{ agoSecs: 10, action: "withdrew all of its liquidity back to escrow" }], activityComplete: true, position: { open: false }, escrowIdleShare: 1, record: null };
-    const hash = (await wt.readFor(x, rec, o, 1_010)).read.inputHash;
-    rec.model = { observedTs: 1_000, inputHash: hash, assessedAt: 1_002, expiresAt: 1_062, a: { breach: 0.66, diagnosis: "withdrew_liquidity", confidence: 0.9, noRedeploy: 0.7, source: "jev-1.13.0", latencyMs: 5 } };
+    const r = assessWithRules(o);
+    rec.model = { observedTs: 1_000, inputHash: "abcdef012345", assessedAt: 1_002, expiresAt: 1_062, a: { breach: 0.66, diagnosis: "withdrew_liquidity", confidence: 0.9, noRedeploy: 0.7, source: "jev-1.13.0", latencyMs: 5 }, rules: { risk: r.risk, breach: r.breach, diagnosis: r.diagnosis, confidence: r.confidence, noRedeploy: r.noRedeploy } };
     const fresh = await wt.readFor(x, rec, o, 1_010);
     expect(fresh.read.source).to.eq("jev-1.13.0+rules");
     expect(fresh.read.assessedAt).to.eq(1_002);
+    expect(fresh.read.inputHash).to.eq("abcdef012345", "published under the hash of the facts the model saw");
+    // Newer facts about the same check don't discard it: the read is of that check.
+    const moreActivity = { ...o, makerActivity: [{ agoSecs: 2, action: "placed 500 USDC of bids near the reference price" }, ...o.makerActivity] };
+    expect((await wt.readFor(x, rec, moreActivity, 1_012)).read.source).to.eq("jev-1.13.0+rules");
     // An older observation's read is not republished against a newer check.
     const newer = { ...x, m: { ...x.m, last: { ts: new BN(1_030) } } };
     expect((await wt.readFor(newer, rec, o, 1_035)).read.source).to.eq("rules");

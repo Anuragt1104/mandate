@@ -23,6 +23,8 @@ export interface ModelRead {
   assessedAt: number;
   expiresAt: number;
   a: { breach: number; diagnosis: string; confidence: number; noRedeploy: number; source: string; latencyMs: number };
+  /** The rules' read of the same facts, so a published read is computed from one set of inputs. */
+  rules: { risk: number; breach: number; diagnosis: string; confidence: number; noRedeploy: number };
 }
 
 export interface MandateRecord {

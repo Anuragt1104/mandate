@@ -40,9 +40,9 @@ can never slow it down.
      c=0.85 r=0.90 b=0.77 x=0.72 m=jev-1.13.0+rules p=s2 h=<facts hash>
    ```
 
-   A model read is used only for the exact observation it assessed (same check, same facts
-   hash) and only until it expires; otherwise the rules' read of the latest check is
-   published. The app takes the publisher from the transaction's signed memo instruction, not
+   A model read is published only for the check it assessed and only until it expires (two
+   periods, at least two minutes), combined with the rules' read of the same facts and under
+   those facts' hash; otherwise the rules' read of the latest check is published. The app takes the publisher from the transaction's signed memo instruction, not
    from log text, and labels a read with its model only when the publisher is on the site's
    list (`NEXT_PUBLIC_TRUSTED_WATCHTOWERS`, plus the simulated watchtower on devnet). A read
    from anyone else is shown as unverified commentary. A signature proves who published a

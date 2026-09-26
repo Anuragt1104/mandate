@@ -60,6 +60,11 @@ export function checkGap(periodSecs: number, risk: number, samplesPerPeriod = 3,
   return rand() * 2 * mean;
 }
 
+/** How long a read stays current: two periods, at least two minutes, at most fifteen. */
+export function readLifetime(periodSecs: number) {
+  return Math.max(120, Math.min(2 * periodSecs, 900));
+}
+
 /** A period with no check yet gets one forced when this little time is left (a quarter of the period, at least 20 s). */
 export function coverageDeadline(periodSecs: number) {
   return Math.max(20, periodSecs / 4);
@@ -70,6 +75,7 @@ export function coverageDeadline(periodSecs: number) {
 interface ModelJob {
   key: string;
   obs: Observation;
+  rules: Assessment;
   observedTs: number;
   hash: string;
   periodSecs: number;
@@ -116,8 +122,9 @@ export class ModelWorker {
             observedTs: job.observedTs,
             inputHash: job.hash,
             assessedAt: now,
-            expiresAt: now + Math.max(60, Math.min(job.periodSecs, 600)),
+            expiresAt: now + readLifetime(job.periodSecs),
             a: { breach: a.breach, diagnosis: a.diagnosis, confidence: a.confidence, noRedeploy: a.noRedeploy, source: a.source, latencyMs: a.latencyMs },
+            rules: { risk: job.rules.risk, breach: job.rules.breach, diagnosis: job.rules.diagnosis, confidence: job.rules.confidence, noRedeploy: job.rules.noRedeploy },
           };
           const rec = this.store.get(key);
           if (!rec.model || rec.model.observedTs <= job.observedTs) rec.model = read;
@@ -350,28 +357,27 @@ export class Watchtower {
     return cap - this.spent.length;
   }
 
-  /** The read published with the next check: of the latest recorded check, never an older one. */
+  /**
+   * The read published with the next check: of the latest recorded check, never an older one.
+   * When the model has assessed that check (and its read hasn't expired), the published read
+   * combines the model's answer with the rules' read of the same facts it saw, under those
+   * facts' hash; otherwise it is the rules' read of the facts now.
+   */
   private async readFor(x: Live, rec: MandateRecord, o: Observation, now: number): Promise<{ read: PublishedRead; a: Assessment } | null> {
     const observedTs = x.m.last.ts.toNumber();
     if (!observedTs || observedTs < x.m.startTs.toNumber()) return null;
-    const hash = await inputHash(this.facts(x, rec, o));
-    const rules = assessWithRules(o);
-    const model = rec.model && rec.model.observedTs === observedTs && rec.model.inputHash === hash && now < rec.model.expiresAt ? rec.model : null;
-    const a = combine(rules, model ? { ...model.a, risk: rules.risk, diagnosis: model.a.diagnosis as Assessment["diagnosis"] } : null);
-    const assessedAt = Math.max(model ? model.assessedAt : now, observedTs);
-    const period = x.m.terms.periodSecs as number;
-    return {
+    const model = rec.model?.rules && rec.model.observedTs === observedTs && now < rec.model.expiresAt ? rec.model : null;
+    const bind = (a: Assessment, hash: string, assessedAt: number, expiresAt: number) => ({
       a,
-      read: {
-        ...a,
-        mandate: x.key,
-        observedTs,
-        assessedAt,
-        expiresAt: model ? model.expiresAt : assessedAt + Math.max(60, Math.min(period, 600)),
-        policy: SENTINEL_POLICY,
-        inputHash: hash,
-      },
-    };
+      read: { ...a, mandate: x.key, observedTs, assessedAt: Math.max(assessedAt, observedTs), expiresAt, policy: SENTINEL_POLICY, inputHash: hash },
+    });
+    if (model) {
+      const rules: Assessment = { ...model.rules, diagnosis: model.rules.diagnosis as Assessment["diagnosis"], source: "rules", latencyMs: 0 };
+      const a = combine(rules, { ...model.a, risk: rules.risk, diagnosis: model.a.diagnosis as Assessment["diagnosis"] });
+      return bind(a, model.inputHash, model.assessedAt, model.expiresAt);
+    }
+    const assessedAt = Math.max(now, observedTs);
+    return bind(assessWithRules(o), await inputHash(this.facts(x, rec, o)), assessedAt, assessedAt + readLifetime(x.m.terms.periodSecs));
   }
 
   /** After a check lands: queue a model read of the new observation, if it's worth one. */
@@ -382,7 +388,7 @@ export class Watchtower {
     const changed = !last || last.a.diagnosis !== rules.diagnosis;
     const due = !last || now - last.assessedAt >= (this.opts.modelEverySecs ?? 45);
     if (!(changed || due || rules.confidence < RULES_CONFIDENT)) return;
-    this.model.submit({ key: x.key, obs: o, observedTs: x.m.last.ts.toNumber(), hash: await inputHash(this.facts(x, rec, o)), periodSecs: x.m.terms.periodSecs });
+    this.model.submit({ key: x.key, obs: o, rules, observedTs: x.m.last.ts.toNumber(), hash: await inputHash(this.facts(x, rec, o)), periodSecs: x.m.terms.periodSecs });
   }
 
   async tick() {
