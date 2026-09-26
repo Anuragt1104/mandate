@@ -12,6 +12,8 @@ interface Account {
   loading: boolean;
   user: User | null;
   workspaces: Workspace[];
+  /** The signed-in person's workspaces have been loaded. */
+  ready: boolean;
   /** The open workspace; null means "this browser only". */
   current: Workspace | null;
   open: (id: string | null) => void;
@@ -37,6 +39,7 @@ const Ctx = createContext<Account>({
   loading: false,
   user: null,
   workspaces: [],
+  ready: false,
   current: null,
   open: () => {},
   refresh: async () => {},
@@ -52,6 +55,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -76,6 +80,8 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       setError(inviteError);
     } catch (e) {
       setError(`Couldn't load your workspaces: ${why(e)}`);
+    } finally {
+      setReady(true);
     }
   }, []);
 
@@ -95,6 +101,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     if (user) refresh();
     else {
       setWorkspaces([]);
+      setReady(false);
       setCurrentId(null);
       setCurrentWorkspace(null);
     }
@@ -117,5 +124,5 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const current = workspaces.find((w) => w.id === currentId) ?? null;
-  return <Ctx.Provider value={{ enabled: CLOUD, loading, user, workspaces, current, open, refresh, signOut, error }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ enabled: CLOUD, loading, user, workspaces, ready, current, open, refresh, signOut, error }}>{children}</Ctx.Provider>;
 }

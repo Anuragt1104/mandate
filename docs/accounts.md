@@ -52,3 +52,37 @@ anon/publishable key; no service-role key is used by the app.
 - With a workspace open, the Overview, Monitoring, and Reports and drafts pages show that
   workspace's work, and new observations and drafts are saved to it. Signing out removes
   workspace copies from the browser.
+
+## Workspace links
+
+`/app/w/<workspace id>` (overview), `/monitoring`, `/reports` and `/settings` under it open that
+workspace for anyone who is a member, so links can be shared inside a team. Non-members are told
+they aren't in the workspace; nothing of it is shown. The sidebar uses these links whenever a
+workspace is open.
+
+## Background observation
+
+A manager can hand an observation to Mandate ("Observe in the background" on its page) for 3–30
+days. The server then samples it at random times with the same code the browser runs
+(`sdk/src/observe.ts`), whether or not any tab is open; the page shows the server's copy and
+keeps its own observer off, and the database refuses browser overwrites while the job runs.
+At most 5 per workspace. Failures back off and stop after 20 in a row, with the reason shown.
+
+Pieces: `observation_jobs` and its functions
+(`supabase/migrations/20260927000000_background_observation.sql`), the route
+`app/src/app/api/observe/route.ts`, and a pg_cron job that calls the route once a minute only
+while some job is due. Mainnet reads use `RPC_UPSTREAM_MAINNET` (set a paid key there; public
+RPC works but is rate limited), devnet reads use `RPC_UPSTREAM`.
+
+Setup, once:
+
+1. Run `supabase/migrations/20260927000000_background_observation.sql` in the SQL editor.
+2. Database → Extensions: make sure `pg_cron` and `pg_net` are enabled, then re-run the last
+   block of that file (the `cron.schedule` part) if the schedule wasn't created
+   (`select * from cron.job` shows `mandate-observe`).
+3. Make a random secret (e.g. `openssl rand -hex 32`) and store it in two places:
+   - Vercel → mandate → Settings → Environment Variables: `CRON_SECRET` (Production, sensitive).
+   - Supabase SQL editor:
+     `select vault.create_secret('<secret>', 'mandate_observe_secret');`
+     `select vault.create_secret('https://mandate-lac-rho.vercel.app/api/observe', 'mandate_observe_url');`
+4. Redeploy so the route sees `CRON_SECRET`.

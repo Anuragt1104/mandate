@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { Copy, Download, Plus, UserPlus } from "lucide-react";
 import { can, cloud, why, type Role } from "@/lib/cloud";
 import { browserOnly, importInto, syncError, useLocalVersion } from "@/lib/local";
@@ -40,6 +41,10 @@ const ACTION: Record<string, string> = {
 export default function WorkspacePage() {
   const acct = useAccount();
   const ws = acct.current;
+  const router = useRouter();
+  const path = usePathname();
+  /** On a workspace URL, switching means going to the other workspace's URL. */
+  const switchTo = (id: string) => (path.startsWith("/app/w/") ? router.push(`/app/w/${id}/settings`) : acct.open(id));
   useLocalVersion();
   const [members, setMembers] = useState<Member[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
@@ -108,12 +113,19 @@ export default function WorkspacePage() {
       style={{ gap: 8, flexWrap: "wrap" }}
       onSubmit={(e) => {
         e.preventDefault();
+        let created: string | null = null;
         act(
-          () => cloud()!.rpc("create_workspace", { ws_name: name.trim(), ws_kind: kind }),
-          () => {
+          async () => {
+            const r = await cloud()!.rpc("create_workspace", { ws_name: name.trim(), ws_kind: kind });
+            created = (r.data as string) ?? null;
+            return r;
+          },
+          async () => {
             setName("");
             setCreating(false);
-            acct.refresh();
+            if (created) acct.open(created);
+            await acct.refresh();
+            if (created) router.push(`/app/w/${created}/settings`);
           },
         );
       }}
@@ -151,7 +163,7 @@ export default function WorkspacePage() {
         </div>
         <div className="row" style={{ gap: 8 }}>
           {acct.workspaces.length > 1 && (
-            <select className="input" style={{ width: "auto" }} value={ws.id} onChange={(e) => acct.open(e.target.value)} aria-label="Switch workspace">
+            <select className="input" style={{ width: "auto" }} value={ws.id} onChange={(e) => switchTo(e.target.value)} aria-label="Switch workspace">
               {acct.workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
             </select>
           )}
@@ -210,7 +222,7 @@ export default function WorkspacePage() {
                       <td className="r xs muted">{ago(Math.max(0, now - Date.parse(m.joined_at) / 1000))}</td>
                       <td className="r">
                         {(editable || self) && (
-                          <button className="btn btn-sm btn-secondary" disabled={busy} onClick={() => act(() => cloud()!.rpc("remove_member", { ws: ws.id, member: m.user_id }), self ? () => acct.refresh() : undefined)}>{self ? "Leave" : "Remove"}</button>
+                          <button className="btn btn-sm btn-secondary" disabled={busy} onClick={() => act(() => cloud()!.rpc("remove_member", { ws: ws.id, member: m.user_id }), self ? () => acct.refresh().then(() => router.push("/app")) : undefined)}>{self ? "Leave" : "Remove"}</button>
                         )}
                       </td>
                     </tr>

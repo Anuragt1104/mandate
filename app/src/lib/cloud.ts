@@ -123,3 +123,37 @@ export async function pullWorkspace(ws: string): Promise<{ sessions: CloudSessio
   if (d.error) throw d.error;
   return { sessions: (s.data ?? []) as CloudSession[], drafts: (d.data ?? []) as CloudDraft[] };
 }
+
+// --- Background observation -----------------------------------------------------------------
+
+export interface BackgroundJob {
+  active: boolean;
+  next_at: string;
+  ends_at: string;
+  runs: number;
+  failures: number;
+  last_sample_at: string | null;
+  last_error: string | null;
+  stopped_reason: string | null;
+}
+
+export async function backgroundJob(ws: string, id: string): Promise<BackgroundJob | null> {
+  const sb = cloud();
+  if (!sb) return null;
+  const { data, error } = await sb.from("observation_jobs").select("active, next_at, ends_at, runs, failures, last_sample_at, last_error, stopped_reason").eq("workspace_id", ws).eq("observation_id", id).maybeSingle();
+  if (error) throw error;
+  return data as BackgroundJob | null;
+}
+
+export async function setBackground(ws: string, id: string, on: boolean, days = 30) {
+  const { error } = (await cloud()?.rpc("set_background_observation", { ws, obs: id, turn_on: on, days })) ?? {};
+  if (error) throw error;
+}
+
+export async function pullSession(ws: string, id: string): Promise<{ session: Session; label: string; updated_at: string } | null> {
+  const sb = cloud();
+  if (!sb) return null;
+  const { data, error } = await sb.from("observations").select("session, label, updated_at").eq("workspace_id", ws).eq("id", id).maybeSingle();
+  if (error) throw error;
+  return data as { session: Session; label: string; updated_at: string } | null;
+}

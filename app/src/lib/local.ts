@@ -132,6 +132,26 @@ function queuePush(s: Session, label: string, ws: string) {
   }, wait);
 }
 
+/** The workspace a saved session belongs to, if any. */
+export function sessionWorkspace(id: string): string | null {
+  return allSessions().find((e) => e.id === id)?.ws ?? null;
+}
+
+/** Stop any queued write of this session to its workspace (the server has taken it over). */
+export function cancelPush(id: string) {
+  const p = pending.get(id);
+  if (p?.timer) clearTimeout(p.timer);
+  pending.delete(id);
+}
+
+/** Keep the workspace's copy of a session here without writing it back. */
+export function storeSession(s: Session, label: string, ws: string, updatedAt: number) {
+  write(sessionKey(s.id), s);
+  const entry: SessionEntry = { id: s.id, pair: s.pair, owner: s.owner, label, cluster: s.cluster, startedAt: s.startedAt, updatedAt, samples: s.samples.length, ws };
+  write(SESSIONS, [entry, ...allSessions().filter((e) => e.id !== s.id)]);
+  changed();
+}
+
 export function deleteSession(id: string) {
   try {
     localStorage.removeItem(sessionKey(id));

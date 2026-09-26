@@ -4,12 +4,13 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { PublicKey } from "@solana/web3.js";
-import { ArrowLeft, Download, FilePen, Pause, Play, Search, Share2, Trash2 } from "lucide-react";
+import { ArrowLeft, CloudCog, Download, FilePen, Pause, Play, Search, Share2, Trash2 } from "lucide-react";
 import { DLMM_PROGRAM, findOperators, newSession, resolvePosition, type Operator, type Session } from "../../../../../sdk/src/observe";
 import { evaluate, packLink, shareable, suggestTerms, type EvalTerms } from "../../../../../sdk/src/report";
 import { CLUSTER, connectionFor, fetchTokenLabels, knownSymbol, type ReadCluster } from "@/lib/chain";
 import { deleteSession, loadSession, saveSession } from "@/lib/local";
 import { useObserver } from "@/lib/observer";
+import { useBackground } from "@/lib/background";
 import { PRESETS, copyText, prefillLink } from "@/lib/drafts";
 import { usePersonas, type PersonaBook } from "@/lib/personas";
 import { useNow } from "@/lib/hooks";
@@ -222,11 +223,27 @@ function Live({ initial }: { initial: Session }) {
   const router = useRouter();
   const now = useNow(5_000);
   const label = sessionLabel(initial);
-  const obs = useObserver(initial, label);
-  const s = obs.session ?? initial;
+  const bg = useBackground(initial.id);
+  // While the server observes, show the workspace's copy and keep this tab's observer off.
+  const [base, setBase] = useState(initial);
+  useEffect(() => {
+    if (bg.serverOwned && bg.remote) setBase(bg.remote);
+  }, [bg.serverOwned, bg.remote]);
+  const obs = useObserver(base, label);
+  const s = obs.session ?? base;
   const [terms, setTerms] = useState<EvalTerms>(s.terms ?? DEFAULT_TERMS);
   const [note, setNote] = useState<string | null>(null);
-  useEffect(() => obs.start(), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [days, setDays] = useState(14);
+  const [autoStarted, setAutoStarted] = useState(false);
+  useEffect(() => {
+    if (!bg.loaded) return;
+    if (bg.serverOwned) obs.pause();
+    else if (!autoStarted) {
+      setAutoStarted(true);
+      obs.start();
+    }
+  }, [bg.loaded, bg.serverOwned]); // eslint-disable-line react-hooks/exhaustive-deps
+  const job = bg.job;
 
   const quote = s.pairFacts.quoteSymbol ?? "quote";
   const sizes = useMemo(() => [terms.minDepth / 5, terms.minDepth, terms.minDepth * 4].map((x) => Math.max(10, Math.round(x / 10) * 10)), [terms.minDepth]);
@@ -276,7 +293,7 @@ function Live({ initial }: { initial: Session }) {
           </p>
         </div>
         <div className="row wrap" style={{ gap: 8 }}>
-          {obs.running ? <button className="btn btn-secondary" onClick={obs.pause}><Pause />Pause</button> : <button className="btn btn-secondary" onClick={obs.start}><Play />Resume</button>}
+          {bg.serverOwned ? null : obs.running ? <button className="btn btn-secondary" onClick={obs.pause}><Pause />Pause</button> : <button className="btn btn-secondary" onClick={obs.start}><Play />Resume</button>}
           <button className="btn btn-secondary" onClick={share} disabled={!s.samples.length}><Share2 />Share report</button>
           <button className="btn btn-primary" onClick={draft} disabled={!e.summary.measured}><FilePen />Draft terms from this</button>
         </div>
@@ -310,7 +327,7 @@ function Live({ initial }: { initial: Session }) {
         </div>
         <div className="stack">
           <div className="card">
-            <div className="card-head"><span className="h3">Evidence</span><span className="xs muted">{obs.running ? (obs.nextAt ? `next sample in ${countdown(Math.max(0, obs.nextAt - now))}` : "sampling") : "paused"}</span></div>
+            <div className="card-head"><span className="h3">Evidence</span><span className="xs muted">{bg.serverOwned ? "observed in the background" : obs.running ? (obs.nextAt ? `next sample in ${countdown(Math.max(0, obs.nextAt - now))}` : "sampling") : "paused"}</span></div>
             <div className="card-body" style={{ display: "grid", gap: 14 }}>
               <ReadinessPanel r={e.readiness} />
               {lastSample && (
@@ -323,8 +340,37 @@ function Live({ initial }: { initial: Session }) {
               {!obs.saved && <div className="notice warn xs">This browser refused to store the session; export it before closing the tab.</div>}
             </div>
             <div className="card-foot" style={{ display: "grid", gap: 8 }}>
-              <span className="xs muted">Observation runs while this tab is open. For days of unattended monitoring:</span>
-              <code className="xs mono" style={{ wordBreak: "break-all" }}>npx tsx scripts/verify.ts --cluster {s.cluster} --pair {s.pair} --owner {s.owner} --period-min {s.periodSecs / 60} --hours 72</code>
+              {bg.serverOwned && job ? (
+                <>
+                  <span className="small row" style={{ gap: 6 }}><CloudCog style={{ width: 15 }} /><b>Mandate observes this in the background</b></span>
+                  <span className="xs muted">
+                    Samples at random times whether or not this tab is open, into {bg.workspaceName ?? "the workspace"}, until {new Date(job.ends_at).toLocaleDateString()}.
+                    {job.last_sample_at ? ` Last server sample ${ago(Math.max(0, now - Date.parse(job.last_sample_at) / 1000))}.` : " The first sample is due within a minute or two."}
+                  </span>
+                  {job.failures > 0 && job.last_error && <div className="notice warn xs">Last {job.failures} read{job.failures === 1 ? "" : "s"} failed: {job.last_error}. Retrying with back-off.</div>}
+                  {bg.canManage && <button className="btn btn-secondary btn-sm" style={{ justifySelf: "start" }} disabled={bg.busy} onClick={bg.stop}>Stop background observation</button>}
+                </>
+              ) : bg.ws && bg.canManage && s.cluster !== "localnet" ? (
+                <>
+                  {job?.stopped_reason && <div className="notice warn xs">Background observation stopped: {job.stopped_reason}.</div>}
+                  <span className="xs muted">This tab samples only while it&apos;s open. Hand it to Mandate to keep observing when it&apos;s closed:</span>
+                  <div className="row" style={{ gap: 8 }}>
+                    <select className="input" style={{ width: "auto" }} value={days} onChange={(ev) => setDays(Number(ev.target.value))} aria-label="How long">
+                      {[3, 7, 14, 30].map((d) => <option key={d} value={d}>for {d} days</option>)}
+                    </select>
+                    <button className="btn btn-primary btn-sm" disabled={bg.busy} onClick={() => (obs.pause(), bg.start(s, label, days))}><CloudCog />Observe in the background</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <span className="xs muted">
+                    Observation runs while this tab is open.{" "}
+                    {bg.enabled && !bg.signedIn ? <><Link className="link" href="/app/account">Sign in</Link> and save it to a workspace to keep observing when it&apos;s closed, or run the verifier:</> : bg.ws && !bg.canManage ? "Managers of the workspace can hand it to Mandate to keep observing. Or run the verifier:" : "For days of unattended monitoring:"}
+                  </span>
+                  <code className="xs mono" style={{ wordBreak: "break-all" }}>npx tsx scripts/verify.ts --cluster {s.cluster} --pair {s.pair} --owner {s.owner} --period-min {s.periodSecs / 60} --hours 72</code>
+                </>
+              )}
+              {bg.error && <div className="notice warn xs">{bg.error}</div>}
               <div className="row" style={{ gap: 8 }}>
                 <button className="btn btn-ghost btn-sm" onClick={exportFile}><Download />Export session</button>
                 <button className="btn btn-ghost btn-sm" onClick={() => (deleteSession(s.id), router.push("/app/reports"))}><Trash2 />Delete</button>

@@ -9,7 +9,7 @@ import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
  * stand-in for what Supabase provides: the anon/authenticated roles, auth.users, and auth.uid()
  * from the request's JWT subject.
  */
-const MIGRATION = path.join(process.cwd(), "supabase", "migrations", "20260926000000_workspaces.sql");
+const MIGRATIONS = ["20260926000000_workspaces.sql", "20260927000000_background_observation.sql"].map((f) => path.join(process.cwd(), "supabase", "migrations", f));
 const A = "00000000-0000-0000-0000-00000000000a";
 const B = "00000000-0000-0000-0000-00000000000b";
 const C = "00000000-0000-0000-0000-00000000000c";
@@ -19,8 +19,8 @@ describe("workspaces schema and row-level security", () => {
   let ws: string;
 
   type Out = { rows?: any[]; err?: string };
-  async function as(uid: string | null, sql: string, params: unknown[] = []): Promise<Out> {
-    await db.exec(`reset role; select set_config('request.jwt.claim.sub', '${uid ?? ""}', false); set role ${uid ? "authenticated" : "anon"};`);
+  async function as(uid: string | null, sql: string, params: unknown[] = [], role?: string): Promise<Out> {
+    await db.exec(`reset role; select set_config('request.jwt.claim.sub', '${uid ?? ""}', false); set role ${role ?? (uid ? "authenticated" : "anon")};`);
     try {
       return { rows: (await db.query(sql, params)).rows as any[] };
     } catch (e) {
@@ -33,15 +33,15 @@ describe("workspaces schema and row-level security", () => {
   before(async () => {
     db = new PGlite({ extensions: { pgcrypto } });
     await db.exec(`
-      create role anon nologin; create role authenticated nologin;
+      create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls;
       create schema extensions; create schema auth;
       create table auth.users (id uuid primary key, email text, raw_user_meta_data jsonb default '{}');
       create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
-      grant usage on schema public, auth, extensions to authenticated, anon;
-      alter default privileges in schema public grant all on tables to authenticated, anon;
-      alter default privileges in schema public grant all on sequences to authenticated, anon;
+      grant usage on schema public, auth, extensions to authenticated, anon, service_role;
+      alter default privileges in schema public grant all on tables to authenticated, anon, service_role;
+      alter default privileges in schema public grant all on sequences to authenticated, anon, service_role;
     `);
-    await db.exec(readFileSync(MIGRATION, "utf8"));
+    for (const m of MIGRATIONS) await db.exec(readFileSync(m, "utf8"));
     await db.exec(`insert into auth.users (id, email, raw_user_meta_data) values ('${A}', 'a@x.io', '{"full_name":"Ana"}'), ('${B}', 'b@x.io', '{}'), ('${C}', 'c@x.io', '{}')`);
     ws = (await as(A, "select public.create_workspace('Kite team') as id")).rows![0].id;
   });
@@ -83,6 +83,24 @@ describe("workspaces schema and row-level security", () => {
     expect((await as(B, "select updated_by from drafts")).rows![0].updated_by).to.equal(B);
     expect((await as(B, "delete from drafts where id = 'd1' returning id")).rows).to.have.length(0);
     expect((await as(B, "insert into observations (workspace_id, id, label, pair, cluster, session, started_at) values ($1, 's1', 'SOL/USDC', 'P', 'mainnet', '{}', now())", [ws])).err).to.be.undefined;
+  });
+
+  it("background observation: managers start it, the service leases it, browsers can't overwrite it", async () => {
+    expect((await as(B, "select public.set_background_observation($1, 's1', true)", [ws])).err).to.be.undefined;
+    expect((await as(B, "select active from observation_jobs")).rows![0].active).to.equal(true);
+    expect((await as(B, "update observations set session = '{\"x\":1}' where id = 's1' returning id")).err).to.match(/runs in the background/);
+    expect((await as(B, "update observations set label = 'renamed' where id = 's1' returning id")).err).to.be.undefined;
+    expect((await as(B, "select * from public.claim_observation_jobs(5, 60)")).err).to.be.a("string");
+    const first = (await as(null, "select * from public.claim_observation_jobs(5, 60)", [], "service_role")).rows!;
+    expect(first.map((r) => r.observation_id)).to.deep.equal(["s1"]);
+    expect((await as(null, "select * from public.claim_observation_jobs(5, 60)", [], "service_role")).rows).to.have.length(0);
+    expect((await as(null, "update observations set session = '{\"y\":2}' where id = 's1' returning id", [], "service_role")).err).to.be.undefined;
+    for (let i = 2; i <= 6; i++) await as(B, `insert into observations (workspace_id, id, label, pair, cluster, session, started_at) values ($1, 's${i}', 'x', 'P', 'mainnet', '{}', now())`, [ws]);
+    for (let i = 2; i <= 5; i++) expect((await as(B, `select public.set_background_observation($1, 's${i}', true)`, [ws])).err).to.be.undefined;
+    expect((await as(B, "select public.set_background_observation($1, 's6', true)", [ws])).err).to.match(/at most 5/);
+    expect((await as(B, "select public.set_background_observation($1, 'nope', true)", [ws])).err).to.match(/save the observation/);
+    expect((await as(B, "select public.set_background_observation($1, 's1', false)", [ws])).err).to.be.undefined;
+    expect((await as(B, "update observations set session = '{}' where id = 's1' returning id")).err).to.be.undefined;
   });
 
   it("keeps an audit trail nobody can forge", async () => {

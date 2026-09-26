@@ -32,12 +32,18 @@ const EXPLORE: NavItem[] = [
   { href: "/", label: "Product site", icon: Compass, match: () => false },
 ];
 
-function Group({ title, items, path }: { title?: string; items: NavItem[]; path: string }) {
+/** Workspace URLs (/app/w/<id>/monitoring) resolve to the pages they show, for highlighting. */
+const plain = (p: string) => p.replace(/^\/app\/w\/[^/]+\/settings/, "/app/workspace").replace(/^\/app\/w\/[^/]+/, "/app");
+/** The open workspace's own URL for a page that has one. */
+const scoped = (href: string, ws: string | undefined) =>
+  !ws ? href : href === "/app" ? `/app/w/${ws}` : ["/app/monitoring", "/app/reports"].includes(href) ? `/app/w/${ws}${href.slice(4)}` : href;
+
+function Group({ title, items, path, ws }: { title?: string; items: NavItem[]; path: string; ws?: string }) {
   return (
     <div className="side-group">
       {title && <span className="side-title">{title}</span>}
       {items.map((n) => (
-        <Link key={n.href} href={n.href} aria-current={n.match(path) ? "page" : undefined}>
+        <Link key={n.href} href={scoped(n.href, ws)} aria-current={n.match(plain(path)) ? "page" : undefined}>
           <n.icon aria-hidden="true" />
           {n.label}
         </Link>
@@ -60,7 +66,7 @@ function WorkspaceBlock() {
     );
   }
   return (
-    <Link className="side-context side-context-link" href="/app/workspace">
+    <Link className="side-context side-context-link" href={acct.current ? `/app/w/${acct.current.id}/settings` : "/app/workspace"}>
       <span className="side-title">Workspace</span>
       <span className="small" style={{ fontWeight: 600 }}>{acct.current?.name ?? "Create a workspace"}</span>
       <span className="xs muted">{acct.current ? `${acct.current.role} · Solana ${CLUSTER}` : "to keep and share your work"}</span>
@@ -71,6 +77,7 @@ function WorkspaceBlock() {
 /** Sidebar, top bar with the network and the signing wallet, and the page. */
 export function AppShell({ children }: { children: ReactNode }) {
   const path = usePathname();
+  const ws = useAccount().current?.id;
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(false), [path]);
   return (
@@ -81,7 +88,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <button className="icon-btn side-close" onClick={() => setOpen(false)} aria-label="Close menu"><X /></button>
         </div>
         <WorkspaceBlock />
-        <Group items={PRIMARY} path={path} />
+        <Group items={PRIMARY} path={path} ws={ws} />
         <Group title="For operators" items={OPERATORS} path={path} />
         <Group title="Explore" items={EXPLORE} path={path} />
         <div className="side-foot">
