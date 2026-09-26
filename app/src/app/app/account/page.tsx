@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { LogOut, Mail, Wallet } from "lucide-react";
-import { cloud, why } from "@/lib/cloud";
+import { cloud, oauthProviders, why } from "@/lib/cloud";
 import { useAccount } from "@/components/account";
 
 /** Sign in, so drafts, observations and reports live in a workspace a team shares. */
@@ -18,6 +18,10 @@ export default function AccountPage() {
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [google, setGoogle] = useState(false);
+  useEffect(() => {
+    oauthProviders().then((p) => setGoogle(!!p.google));
+  }, []);
 
   const back = typeof window !== "undefined" ? `${window.location.origin}/app/workspace` : undefined;
 
@@ -116,13 +120,13 @@ export default function AccountPage() {
 
           <div className="row" style={{ gap: 10 }}><span className="xs muted">or</span></div>
 
-          <button
+          {google && <button
             className="btn btn-secondary"
             disabled={!!busy}
             onClick={() => run("google", () => cloud()!.auth.signInWithOAuth({ provider: "google", options: { redirectTo: back } }))}
           >
             {busy === "google" ? "Opening Google…" : "Continue with Google"}
-          </button>
+          </button>}
 
           <button
             className="btn btn-secondary"

@@ -24,6 +24,17 @@ export function cloud(): SupabaseClient | null {
   return client;
 }
 
+/** Which OAuth providers are turned on for this project (Supabase reports these publicly). */
+export async function oauthProviders(): Promise<Record<string, boolean>> {
+  if (!CLOUD) return {};
+  try {
+    const r = await fetch(`${URL}/auth/v1/settings`, { headers: { apikey: KEY! } });
+    return r.ok ? ((await r.json()).external ?? {}) : {};
+  } catch {
+    return {};
+  }
+}
+
 export type Role = "viewer" | "manager" | "admin" | "owner";
 export const RANK: Record<Role, number> = { viewer: 1, manager: 2, admin: 3, owner: 4 };
 export const can = (role: Role | undefined, at: Role) => !!role && RANK[role] >= RANK[at];
