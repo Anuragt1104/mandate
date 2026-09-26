@@ -6,11 +6,13 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 CLUSTER="${1:-devnet}"
 PROGRAM=3YetFVe4F6MuYaHH7pAmTCZjtMnunQT1ufMdAY8rYFrn
+# MANIFEST_RPC overrides the public endpoint (it is never written to the manifest).
 case "$CLUSTER" in
   devnet) URL=https://api.devnet.solana.com ;;
   mainnet-beta) URL=https://api.mainnet-beta.solana.com ;;
   *) URL=http://127.0.0.1:8899 ;;
 esac
+URL="${MANIFEST_RPC:-$URL}"
 sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
 COMMIT=$(git rev-parse HEAD)
 DIRTY=$([ -z "$(git status --porcelain -- programs Cargo.lock)" ] && echo false || echo true)

@@ -1,0 +1,9 @@
+{
+  "program": "3YetFVe4F6MuYaHH7pAmTCZjtMnunQT1ufMdAY8rYFrn",
+  "cluster": "devnet",
+  "commit": "b6a39db9353f258263d2fbee5d7647b4dfcedae0",
+  "programSourceDirty": false,
+  "toolchain": { "solana": "solana-cli 3.1.12 (src:6c1ba346; feat:4140108451, client:Agave)", "anchor": "anchor-cli 0.32.1", "rustc": "rustc 1.94.1 (e408947bf 2026-03-25)" },
+  "sha256": { "built": "00d343a8167d3990598ac8f29df8a5a195ab986a4e3c1083ebbf5b7047021384", "idl": "10db2c065e8642ca079a98ec0bd2b5e12742ddb64afd96cb63d6cfb5890978f5", "onChain": "00d343a8167d3990598ac8f29df8a5a195ab986a4e3c1083ebbf5b7047021384" },
+  "recordedAt": "2026-09-26T12:19:30Z"
+}
